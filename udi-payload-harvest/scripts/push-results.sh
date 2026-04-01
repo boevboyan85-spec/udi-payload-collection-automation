@@ -23,5 +23,12 @@ if git diff --cached --quiet; then
 fi
 
 MSG="${1:-chore(results): append txId capture records}"
+
+# KASM / headless clones often have no git user — use env (or git config) for author + committer.
+if [[ -n "${GIT_AUTHOR_NAME:-}" && -n "${GIT_AUTHOR_EMAIL:-}" ]]; then
+  export GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-$GIT_AUTHOR_NAME}"
+  export GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-$GIT_AUTHOR_EMAIL}"
+fi
+
 git commit -m "$MSG"
 git push origin develop
