@@ -70,6 +70,9 @@ npm run collect
 | `TOR_WARMUP_MS` | Default **`15000`**. After Marionette connects, wait this long **before** `driver.get` so Tor can finish connecting to the Tor network. Increase if the window loads the URL then misbehaves. **`0`** is allowed. |
 | `TOR_SETTLE_AFTER_LOAD_MS` | Default **`COLLECTOR_SETTLE_MS`**. Sleep after navigation before polling **`#udip`**. |
 | `TOR_SELENIUM_KEEP_OPEN` | Set **`1`** to **not** call **`driver.quit()`** so Tor stays open for debugging (you close it yourself). |
+| `TOR_SELENIUM_PROFILE_DIR` | **Persistent** Firefox profile directory for Tor + Selenium (default: **`~/.udi-tor-selenium-profile`**). Reusing one directory lets Tor remember **Always connect** and other launcher state. |
+| `TOR_SELENIUM_EPHEMERAL_PROFILE` | Set **`1`** / **`true`** to **not** pass **`-profile`** — each run gets a new anonymous profile (connect dialog every time; legacy behavior). |
+| `TOR_SELENIUM_TOR_LAUNCHER_PROMPT` | Default **on** (unset). Sets Tor prefs to reduce the startup **Connect to Tor** modal (quickstart + no launcher prompt at startup). Set **`0`** / **`false`** to leave Tor defaults. |
 
 ## Headless
 
@@ -166,6 +169,10 @@ This commits **`results/txids.jsonl`** and runs **`git push origin develop`**. F
 **Firefox (Playwright): `CanCreateUserNamespace() … EPERM`**
 
 - Containers often block Linux user namespaces. **`PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX`** (default on) sets **`MOZ_DISABLE_*`** for Playwright’s Firefox launches.
+
+**Tor asks to connect every run even after “Always connect”**
+
+- By default the script uses a **persistent profile** at **`~/.udi-tor-selenium-profile`** (override with **`TOR_SELENIUM_PROFILE_DIR`**) via **`-profile`**, so Tor can save launcher settings. Older behavior used a **new anonymous profile each session** (nothing persisted). If you still see the dialog on every run, confirm stderr shows **`Tor: persistent Marionette profile:`** and that you are not setting **`TOR_SELENIUM_EPHEMERAL_PROFILE=1`**. **`TOR_SELENIUM_TOR_LAUNCHER_PROMPT`** defaults to prefs that skip the launcher modal when Tor allows it.
 
 **Tor Browser opens but automation never navigates / stuck until you close the window**
 

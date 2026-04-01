@@ -16,6 +16,11 @@
  *   TOR_WARMUP_MS     Default 15000 — sleep after WebDriver session before `driver.get` (Tor bootstrap).
  *   TOR_SETTLE_AFTER_LOAD_MS  Default COLLECTOR_SETTLE_MS — sleep after navigation before polling #udip.
  *   TOR_SELENIUM_KEEP_OPEN    Set 1 to skip driver.quit() so the window stays up for debugging.
+ *   TOR_SELENIUM_PROFILE_DIR  Override path for the **persistent** Marionette profile (default: ~/.udi-tor-selenium-profile).
+ *                             With TOR_SELENIUM_EPHEMERAL_PROFILE=1, each run uses a fresh profile and Tor’s
+ *                             “Always connect” cannot persist across runs.
+ *   TOR_SELENIUM_TOR_LAUNCHER_PROMPT  Default on: prefs to skip the Tor Launcher startup modal and enable
+ *                             quickstart (“always connect”). Set 0/false to use Tor defaults only.
  *   COLLECTOR_SETTLE_MS  Extra wait after load so GDTM can inject #udip / #txId (default: 2000)
  *   RESULTS_FILE       Path to JSONL log (default: <project>/results/txids.jsonl)
  *   SKIP_RESULTS_FILE  Set to 1 to disable writing txId records
@@ -34,6 +39,7 @@ import { chromium, firefox, webkit } from 'playwright';
 import { Builder, By } from 'selenium-webdriver';
 import { Options, ServiceBuilder } from 'selenium-webdriver/firefox.js';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -122,6 +128,32 @@ function resolveGeckodriverPath() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+const TOR_SELENIUM_EPHEMERAL_PROFILE =
+  process.env.TOR_SELENIUM_EPHEMERAL_PROFILE === '1' ||
+  process.env.TOR_SELENIUM_EPHEMERAL_PROFILE === 'true';
+
+/**
+ * Persistent on-disk profile for Tor + Selenium. Selenium’s `setProfile()` only **copies** a template each
+ * session and never writes back, so “Always connect” could not persist; `-profile` uses one directory in place.
+ * @returns {string} absolute profile path, or '' for ephemeral (legacy behavior).
+ */
+function resolveTorSeleniumProfileDir() {
+  if (TOR_SELENIUM_EPHEMERAL_PROFILE) return '';
+  const raw = (process.env.TOR_SELENIUM_PROFILE_DIR || '').trim();
+  const dir = raw
+    ? path.resolve(raw)
+    : path.join(os.homedir(), '.udi-tor-selenium-profile');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** Prefs aligned with Tor’s quickstart / fewer launcher prompts on automation runs. */
+const TOR_SELENIUM_QUICKSTART_PREFS = (() => {
+  const v = process.env.TOR_SELENIUM_TOR_LAUNCHER_PROMPT;
+  if (v === '0' || v === 'false') return false;
+  return true;
+})();
+
 /**
  * Real Tor Browser is stock Mozilla Gecko without Playwright’s **Juggler** protocol — `firefox.launch`
  * hangs waiting for the pipe. Use **Marionette** via Selenium + GeckoDriver instead.
@@ -136,8 +168,23 @@ async function buildTorWebDriver() {
     .setBinary(exe)
     .setAcceptInsecureCerts(PLAYWRIGHT_IGNORE_HTTPS_ERRORS);
 
+  const profileDir = resolveTorSeleniumProfileDir();
+  if (profileDir) {
+    options.addArguments('-profile', profileDir);
+    process.stderr.write(`Tor: persistent Marionette profile: ${profileDir}\n`);
+  } else {
+    process.stderr.write(
+      'Tor: ephemeral profile (TOR_SELENIUM_EPHEMERAL_PROFILE) — Tor may show the connect dialog every run.\n',
+    );
+  }
+
   if (HEADLESS) {
     options.addArguments('-headless');
+  }
+
+  if (TOR_SELENIUM_QUICKSTART_PREFS) {
+    options.setPreference('extensions.torlauncher.prompt_at_startup', false);
+    options.setPreference('torbrowser.settings.quickstart.enabled', true);
   }
 
   options.setPreference('security.sandbox.content.level', 0);
