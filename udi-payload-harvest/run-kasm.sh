@@ -27,6 +27,9 @@ export UDIBROWSERS
 # Corp TLS inspection: Playwright Firefox does not use the OS CA store by default.
 : "${PLAYWRIGHT_IGNORE_HTTPS_ERRORS:=1}"
 export PLAYWRIGHT_IGNORE_HTTPS_ERRORS
+# Firefox/Tor: user-namespace sandbox EPERM in Docker/Kasm — Mozilla env disables content sandbox.
+: "${PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX:=1}"
+export PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX
 if [[ -z "${TOR_BROWSER_PATH:-}" && -x "${HOME}/tor-browser/Browser/firefox" ]]; then
   export TOR_BROWSER_PATH="${HOME}/tor-browser/Browser/firefox"
 fi

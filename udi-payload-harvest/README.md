@@ -65,6 +65,7 @@ npm run collect
 | `COLLECTOR_URL` | `https://gdtm-dev.globalsiteanalytics.com/kasm.html` (reads **`#udip`** payload and **`#txId`**) |
 | `COLLECTOR_SETTLE_MS` | `2000` — extra wait after `kasm.html` loads so GDTM can fill `#udip` / `#txId` |
 | `PLAYWRIGHT_IGNORE_HTTPS_ERRORS` | Default **on** (`1` / unset). Playwright passes **`ignoreHTTPSErrors`** on the browser context so TLS still works when a corporate proxy re-signs HTTPS (Firefox often shows **`SEC_ERROR_UNKNOWN_ISSUER`** without this). Set to **`0`** or **`false`** to require a valid certificate chain. |
+| `PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX` | Default **on** (`1` / unset). Launches Firefox / **Tor Browser** with **`MOZ_DISABLE_CONTENT_SANDBOX=1`** so **`Sandbox: CanCreateUserNamespace() … EPERM`** does not abort automation in Docker/Kasm. Set **`0`** on hosts where unprivileged user namespaces work and you want Mozilla’s content sandbox. |
 
 ## Headless
 
@@ -157,6 +158,10 @@ This commits **`results/txids.jsonl`** and runs **`git push origin develop`**. F
 **Brave / Opera / Tor not found**
 
 - Set `BRAVE_PATH`, `OPERA_PATH`, or `TOR_BROWSER_PATH` to the real binary. Tor is often under `tor-browser/Browser/firefox` or a distro wrapper script.
+
+**Firefox / Tor: `CanCreateUserNamespace() … EPERM` then immediate exit**
+
+- Containers often block Linux user namespaces. The collector sets **`MOZ_DISABLE_CONTENT_SANDBOX=1`** by default (see **`PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX`**). **`TOR_BROWSER_PATH`** should point at **`…/tor-browser/Browser/firefox`** (not the `start-tor-browser` shell script).
 
 **403 / corporate proxy**
 

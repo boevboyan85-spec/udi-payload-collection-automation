@@ -10,6 +10,7 @@
 #
 # PLAYWRIGHT_IGNORE_HTTPS_ERRORS=1 (default below): Playwright Firefox ignores TLS chain errors
 # (e.g. SEC_ERROR_UNKNOWN_ISSUER with corporate TLS inspection). Set 0 to enforce strict TLS.
+# PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX=1 (default): MOZ_DISABLE_CONTENT_SANDBOX for Firefox/Tor in Kasm (EPERM).
 #
 # Installs Brave from the official APT repo (for UDIBROWSERS=brave). Set SKIP_BRAVE_APT=1 to skip.
 #
@@ -35,6 +36,8 @@ export GITHUB_TOKEN
 
 PLAYWRIGHT_IGNORE_HTTPS_ERRORS="${PLAYWRIGHT_IGNORE_HTTPS_ERRORS:-1}"
 export PLAYWRIGHT_IGNORE_HTTPS_ERRORS
+PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX="${PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX:-1}"
+export PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX
 
 mkdir -p "$HOME/Documents/git"
 cd "$HOME/Documents/git"

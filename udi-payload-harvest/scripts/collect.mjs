@@ -20,6 +20,9 @@
  *   PLAYWRIGHT_IGNORE_HTTPS_ERRORS  Default on (unset or 1/true). Set 0/false to enforce TLS.
  *                                   Firefox bundled with Playwright uses its own trust store; corp MITM
  *                                   often causes SEC_ERROR_UNKNOWN_ISSUER without this.
+ *   PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX  Default on (unset or 1/true). Sets MOZ_DISABLE_CONTENT_SANDBOX=1
+ *                                   for Firefox / Tor Browser so launch works in Docker/Kasm where
+ *                                   user namespaces return EPERM. Set 0/false to keep Mozilla sandbox (non-container).
  */
 
 import { spawnSync } from 'node:child_process';
@@ -48,6 +51,22 @@ const PLAYWRIGHT_IGNORE_HTTPS_ERRORS = (() => {
   if (v === '1' || v === 'true') return true;
   return true;
 })();
+
+/** Extra env for Firefox / Tor so `clone()` user-namespace sandbox does not EPERM in Kasm/Docker. */
+const PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX = (() => {
+  const v = process.env.PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX;
+  if (v === '0' || v === 'false') return false;
+  if (v === '1' || v === 'true') return true;
+  return true;
+})();
+
+function firefoxLaunchOptions(base) {
+  if (!PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX) return base;
+  return {
+    ...base,
+    env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: '1' },
+  };
+}
 
 const DEFAULT_RESULTS_FILE = path.join(PROJECT_ROOT, 'results', 'txids.jsonl');
 
@@ -323,7 +342,7 @@ async function launchBrowser(kind) {
     case 'firefox': {
       const exe = process.env.FIREFOX_PATH || undefined;
       return firefox.launch(
-        exe ? { ...opts, executablePath: exe } : opts,
+        firefoxLaunchOptions(exe ? { ...opts, executablePath: exe } : opts),
       );
     }
     case 'tor': {
@@ -331,11 +350,13 @@ async function launchBrowser(kind) {
         '/usr/bin/tor-browser',
         '/usr/local/bin/tor-browser',
       ]);
-      return firefox.launch({
-        ...opts,
-        executablePath: exe,
-        args: ['--no-remote'],
-      });
+      return firefox.launch(
+        firefoxLaunchOptions({
+          ...opts,
+          executablePath: exe,
+          args: ['--no-remote'],
+        }),
+      );
     }
     case 'webkit':
       return webkit.launch(opts);
