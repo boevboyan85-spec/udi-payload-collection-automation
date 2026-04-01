@@ -11,6 +11,8 @@
 # PLAYWRIGHT_IGNORE_HTTPS_ERRORS=1 (default below): Playwright Firefox ignores TLS chain errors
 # (e.g. SEC_ERROR_UNKNOWN_ISSUER with corporate TLS inspection). Set 0 to enforce strict TLS.
 #
+# Installs Brave from the official APT repo (for UDIBROWSERS=brave). Set SKIP_BRAVE_APT=1 to skip.
+#
 set -euo pipefail
 
 GIT_USER_NAME="Boyan Boev"
@@ -46,7 +48,20 @@ fi
 cd "$REPO_DIR/$HARVEST_DIR_NAME"
 
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg
+sudo apt-get install -y ca-certificates curl gnupg apt-transport-https
+
+if [[ "${SKIP_BRAVE_APT:-}" != "1" ]]; then
+  echo "Installing Brave Browser (official APT repository)..."
+  sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
+    https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+  ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
+  echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg arch=${ARCH}] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+    | sudo tee /etc/apt/sources.list.d/brave-browser-release.list >/dev/null
+  sudo apt-get update
+  sudo apt-get install -y brave-browser
+else
+  echo "Skipping Brave APT install (SKIP_BRAVE_APT=1)."
+fi
 
 if [[ -f /etc/apt/sources.list.d/sublime-text.list ]]; then
   echo "Commenting first line of /etc/apt/sources.list.d/sublime-text.list"
