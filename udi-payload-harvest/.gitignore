@@ -1,4 +1,5 @@
 node_modules/
+.playwright-tor-profile/
 playwright-report/
 test-results/
 .env

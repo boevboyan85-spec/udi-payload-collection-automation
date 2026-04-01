@@ -47,7 +47,7 @@ Comma-separated list in **`UDIBROWSERS`** (default: `chrome,firefox,chromium`):
 | `brave` | `BRAVE_PATH` or `/usr/bin/brave-browser` |
 | `opera` | `OPERA_PATH` or `/usr/bin/opera` |
 | `firefox` | Playwright’s bundled Firefox unless **`FIREFOX_PATH`** is set (system Firefox) |
-| `tor` | `TOR_BROWSER_PATH` or `/usr/bin/tor-browser` |
+| `tor` | **`TOR_BROWSER_PATH`** (e.g. `…/tor-browser/Browser/firefox`). Uses **`launchPersistentContext`** + on-disk **`user.js`** sandbox prefs under **`.playwright-tor-profile/`** (override with **`TOR_PLAYWRIGHT_PROFILE_DIR`**) so Tor can start in Kasm before Juggler attaches. |
 | `webkit` | Playwright WebKit (not Safari). Payload comes from **`#udip` / `#txId`** on the collector page (same as other browsers). |
 
 Example:
@@ -65,7 +65,8 @@ npm run collect
 | `COLLECTOR_URL` | `https://gdtm-dev.globalsiteanalytics.com/kasm.html` (reads **`#udip`** payload and **`#txId`**) |
 | `COLLECTOR_SETTLE_MS` | `2000` — extra wait after `kasm.html` loads so GDTM can fill `#udip` / `#txId` |
 | `PLAYWRIGHT_IGNORE_HTTPS_ERRORS` | Default **on** (`1` / unset). Playwright passes **`ignoreHTTPSErrors`** on the browser context so TLS still works when a corporate proxy re-signs HTTPS (Firefox often shows **`SEC_ERROR_UNKNOWN_ISSUER`** without this). Set to **`0`** or **`false`** to require a valid certificate chain. |
-| `PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX` | Default **on** (`1` / unset). Launches Firefox / **Tor Browser** with **`MOZ_DISABLE_CONTENT_SANDBOX=1`** so **`Sandbox: CanCreateUserNamespace() … EPERM`** does not abort automation in Docker/Kasm. Set **`0`** on hosts where unprivileged user namespaces work and you want Mozilla’s content sandbox. |
+| `PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX` | Default **on** (`1` / unset). Sets **`MOZ_DISABLE_CONTENT_SANDBOX`**, **`MOZ_DISABLE_GMP_SANDBOX`**, **`MOZ_DISABLE_RDD_SANDBOX`**, **`MOZ_DISABLE_SOCKET_PROCESS_SANDBOX`**, plus **`firefoxUserPrefs`** for **`security.sandbox.content.level`** — aimed at **`CanCreateUserNamespace() … EPERM`** in Docker/Kasm. Set **`0`** to keep Mozilla sandboxes. |
+| `TOR_PLAYWRIGHT_PROFILE_DIR` | Optional. Directory for Tor’s **persistent** Playwright profile (default **`.playwright-tor-profile/`** under the project). A **`user.js`** is written each run so sandbox prefs exist **before** startup. |
 
 ## Headless
 
@@ -161,7 +162,7 @@ This commits **`results/txids.jsonl`** and runs **`git push origin develop`**. F
 
 **Firefox / Tor: `CanCreateUserNamespace() … EPERM` then immediate exit**
 
-- Containers often block Linux user namespaces. The collector sets **`MOZ_DISABLE_CONTENT_SANDBOX=1`** by default (see **`PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX`**). **`TOR_BROWSER_PATH`** should point at **`…/tor-browser/Browser/firefox`** (not the `start-tor-browser` shell script).
+- Containers often block Linux user namespaces. The collector sets several **`MOZ_DISABLE_*`** env vars by default (**`PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX`**). **Tor** additionally uses a **persistent profile** with **`user.js`** (see **`.playwright-tor-profile/`**) because Playwright’s **`firefoxUserPrefs`** only apply after Juggler connects — too late if the process exits on sandbox init. **`TOR_BROWSER_PATH`** should be **`…/tor-browser/Browser/firefox`**.
 
 **403 / corporate proxy**
 

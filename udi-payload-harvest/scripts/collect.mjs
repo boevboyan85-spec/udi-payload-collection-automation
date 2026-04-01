@@ -20,9 +20,11 @@
  *   PLAYWRIGHT_IGNORE_HTTPS_ERRORS  Default on (unset or 1/true). Set 0/false to enforce TLS.
  *                                   Firefox bundled with Playwright uses its own trust store; corp MITM
  *                                   often causes SEC_ERROR_UNKNOWN_ISSUER without this.
- *   PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX  Default on (unset or 1/true). Sets MOZ_DISABLE_CONTENT_SANDBOX=1
- *                                   for Firefox / Tor Browser so launch works in Docker/Kasm where
- *                                   user namespaces return EPERM. Set 0/false to keep Mozilla sandbox (non-container).
+ *   PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX  Default on (unset or 1/true). Sets several MOZ_DISABLE_* env vars
+ *                                   for Firefox / Tor Browser (Docker/Kasm user-namespace EPERM). Set 0/false off.
+ *   TOR_PLAYWRIGHT_PROFILE_DIR  Optional absolute or project-relative path for Tor persistent profile (default:
+ *                                   .playwright-tor-profile). A user.js is written here so sandbox prefs apply
+ *                                   before Juggler connects (Tor often still needs this in addition to env).
  */
 
 import { spawnSync } from 'node:child_process';
@@ -60,12 +62,84 @@ const PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX = (() => {
   return true;
 })();
 
+/** Env vars read at Firefox/Tor process start (before Juggler / protocol prefs). */
+const MOZ_SANDBOX_ENV_DISABLE = {
+  MOZ_DISABLE_CONTENT_SANDBOX: '1',
+  MOZ_DISABLE_GMP_SANDBOX: '1',
+  MOZ_DISABLE_RDD_SANDBOX: '1',
+  MOZ_DISABLE_SOCKET_PROCESS_SANDBOX: '1',
+};
+
 function firefoxLaunchOptions(base) {
   if (!PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX) return base;
+  const overlay =
+    base.env && typeof base.env === 'object' && !Array.isArray(base.env)
+      ? base.env
+      : {};
+  const env = {
+    ...process.env,
+    ...overlay,
+    ...MOZ_SANDBOX_ENV_DISABLE,
+  };
+  const firefoxUserPrefs = {
+    'security.sandbox.content.level': 0,
+    ...(base.firefoxUserPrefs || {}),
+  };
   return {
     ...base,
-    env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: '1' },
+    env,
+    firefoxUserPrefs,
   };
+}
+
+function resolveTorPlaywrightProfileDir() {
+  const raw = process.env.TOR_PLAYWRIGHT_PROFILE_DIR;
+  if (!raw || !String(raw).trim()) {
+    return path.join(PROJECT_ROOT, '.playwright-tor-profile');
+  }
+  const s = String(raw).trim();
+  return path.isAbsolute(s) ? s : path.join(PROJECT_ROOT, s);
+}
+
+/**
+ * Tor: Playwright only applies firefoxUserPrefs after Juggler connects — too late if the parent
+ * process dies on sandbox init. Write user.js into a persistent profile so prefs load at startup.
+ */
+function ensureTorPlaywrightProfileUserJs(profileDir) {
+  fs.mkdirSync(profileDir, { recursive: true });
+  const userJsPath = path.join(profileDir, 'user.js');
+  const body = [
+    '// udi-payload-harvest: relax sandboxes for Playwright + Tor in Kasm/Docker (user namespaces EPERM)',
+    'user_pref("security.sandbox.content.level", 0);',
+    'user_pref("security.sandbox.socket.process.level", 0);',
+    'user_pref("media.cubeb.sandbox", false);',
+    '',
+  ].join('\n');
+  fs.writeFileSync(userJsPath, body, 'utf8');
+}
+
+/**
+ * Tor Browser via persistent context + disk user.js (see ensureTorPlaywrightProfileUserJs).
+ */
+async function launchTorPersistentContext() {
+  const exe = resolveExecutable('tor_browser', [
+    '/usr/bin/tor-browser',
+    '/usr/local/bin/tor-browser',
+  ]);
+  const profileDir = resolveTorPlaywrightProfileDir();
+  ensureTorPlaywrightProfileUserJs(profileDir);
+  process.stderr.write(`Tor Playwright profile (user.js sandbox prefs): ${profileDir}\n`);
+
+  const baseOpts = {
+    headless: HEADLESS,
+    executablePath: exe,
+    args: ['--no-remote'],
+    ignoreHTTPSErrors: PLAYWRIGHT_IGNORE_HTTPS_ERRORS,
+  };
+  return firefox.launchPersistentContext(
+    profileDir,
+    firefoxLaunchOptions(baseOpts),
+  );
 }
 
 const DEFAULT_RESULTS_FILE = path.join(PROJECT_ROOT, 'results', 'txids.jsonl');
@@ -269,15 +343,11 @@ async function obtainKasmPayloadAndTx(page) {
 }
 
 /**
+ * @param {import('playwright').Page} page
  * @param {import('playwright').Browser} browser
  * @param {string} displayName
  */
-async function runOneBrowser(browser, displayName) {
-  const context = await browser.newContext({
-    ignoreHTTPSErrors: PLAYWRIGHT_IGNORE_HTTPS_ERRORS,
-  });
-
-  const page = await context.newPage();
+async function runCollectorInPage(page, browser, displayName) {
   let version = '';
   try {
     version = await browser.version();
@@ -303,8 +373,22 @@ async function runOneBrowser(browser, displayName) {
     browserVersion: String(version || 'unknown'),
     fetchedAt: ts,
   });
+}
 
-  await context.close();
+/**
+ * @param {import('playwright').Browser} browser
+ * @param {string} displayName
+ */
+async function runOneBrowser(browser, displayName) {
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: PLAYWRIGHT_IGNORE_HTTPS_ERRORS,
+  });
+  const page = await context.newPage();
+  try {
+    await runCollectorInPage(page, browser, displayName);
+  } finally {
+    await context.close();
+  }
 }
 
 async function launchBrowser(kind) {
@@ -345,19 +429,8 @@ async function launchBrowser(kind) {
         firefoxLaunchOptions(exe ? { ...opts, executablePath: exe } : opts),
       );
     }
-    case 'tor': {
-      const exe = resolveExecutable('tor_browser', [
-        '/usr/bin/tor-browser',
-        '/usr/local/bin/tor-browser',
-      ]);
-      return firefox.launch(
-        firefoxLaunchOptions({
-          ...opts,
-          executablePath: exe,
-          args: ['--no-remote'],
-        }),
-      );
-    }
+    case 'tor':
+      throw new Error('Tor is launched via launchTorPersistentContext() — not launchBrowser(tor)');
     case 'webkit':
       return webkit.launch(opts);
     default:
@@ -386,6 +459,34 @@ async function main() {
   for (const kind of kinds) {
     const label = displayLabel(kind);
     process.stderr.write(`\n>>> ${label} (${kind})\n`);
+
+    if (kind === 'tor') {
+      /** @type {import('playwright').BrowserContext | null} */
+      let pctx = null;
+      try {
+        pctx = await launchTorPersistentContext();
+      } catch (e) {
+        failures.push({ kind, phase: 'launch', error: e });
+        process.stderr.write(`Launch failed: ${e?.message || e}\n`);
+        continue;
+      }
+      try {
+        const page = pctx.pages()[0] ?? (await pctx.newPage());
+        const br = pctx.browser();
+        if (!br) {
+          throw new Error('Persistent Tor context has no Browser handle');
+        }
+        await runCollectorInPage(page, br, label);
+        process.stderr.write(`OK: ${label}\n`);
+      } catch (e) {
+        failures.push({ kind, phase: 'run', error: e });
+        process.stderr.write(`Run failed: ${e?.message || e}\n`);
+      } finally {
+        await pctx.close().catch(() => {});
+      }
+      continue;
+    }
+
     let browser;
     try {
       browser = await launchBrowser(kind);
