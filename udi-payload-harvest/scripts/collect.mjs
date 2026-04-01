@@ -226,29 +226,33 @@ async function appendToSharedText(page, block) {
 
   if (hasTextarea) {
     await textarea.waitFor({ state: 'visible', timeout: 30000 });
-    const existing = await waitForStableTextareaValue(page, textarea);
-    const next = existing + block;
+    const existing = String(
+      (await waitForStableTextareaValue(page, textarea)) ?? '',
+    );
+    const next = existing + String(block ?? '');
     await textarea.click();
+    // Locator.evaluate(fn, arg) calls fn(element, arg) — not fn(arg). First param is the textarea node.
     await textarea.evaluate(
-      ({ fullValue, appendedBlock }) => {
-        const el = document.getElementById('text');
+      (el, { fullValue, appendedBlock }) => {
         if (!el || !('value' in el)) return;
         const proto = window.HTMLTextAreaElement.prototype;
         const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+        const v = fullValue == null ? '' : String(fullValue);
+        const app = appendedBlock == null ? '' : String(appendedBlock);
         if (desc?.set) {
-          desc.set.call(el, fullValue);
+          desc.set.call(el, v);
         } else {
-          el.value = fullValue;
+          el.value = v;
         }
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
         try {
           const opts =
-            appendedBlock.length <= 8000
+            app.length <= 8000
               ? {
                   bubbles: true,
                   inputType: 'insertFromPaste',
-                  data: appendedBlock,
+                  data: app,
                 }
               : { bubbles: true, inputType: 'insertFromPaste' };
           el.dispatchEvent(new InputEvent('input', opts));
@@ -299,9 +303,10 @@ async function runOneBrowser(browser, displayName) {
   }
   process.stderr.write(`Payload captured (${payload.length} chars)\n`);
 
-  const ua = await page.evaluate(() => navigator.userAgent);
+  const ua =
+    (await page.evaluate(() => navigator.userAgent).catch(() => '')) || '';
   const ts = new Date().toISOString();
-  const block = `\n--- BROWSER: ${displayName} | engine: ${version} | ${ts} ---\n${ua}\n${payload}\n`;
+  const block = `\n--- BROWSER: ${String(displayName)} | engine: ${String(version || 'unknown')} | ${ts} ---\n${String(ua)}\n${String(payload)}\n`;
 
   await appendToSharedText(page, block);
   await context.close();
