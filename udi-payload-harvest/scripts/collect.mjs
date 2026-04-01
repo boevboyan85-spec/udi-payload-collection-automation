@@ -128,7 +128,8 @@ async function grantClipboard(context, origins) {
 async function appendToSharedText(page, block) {
   await page.goto(TEXT_SYNC_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-  const textarea = page.locator('textarea').first();
+  // Shared sync page uses <textarea id="text">; avoid textarea.first() when multiple textareas exist.
+  const textarea = page.locator('textarea#text');
   const hasTextarea = await textarea.count().then((c) => c > 0);
 
   if (hasTextarea) {

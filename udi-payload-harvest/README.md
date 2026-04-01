@@ -76,7 +76,7 @@ HEADLESS=1 npm run collect
 1. For each browser: new context, grant **clipboard-read/write** for collector and text origins.
 2. Open collector page, wait for **Copy Payload**.
 3. Try to read payload from **DOM** (`pre`, `code`, `#payload`, etc.); if missing, **click Copy** and read **clipboard**.
-4. Open the shared text page, find **`textarea`** or **`contenteditable`**, **append** a block (existing text is preserved):
+4. Open the shared text page, **append** to **`textarea#text`** (or **`contenteditable`** if that element is absent):
 
    `--- BROWSER: <name> | engine: <version> | <ISO time> ---`  
    User-Agent line, then payload.
