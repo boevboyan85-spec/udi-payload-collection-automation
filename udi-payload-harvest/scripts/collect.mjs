@@ -15,6 +15,7 @@
  *   TEXT_SYNC_DRAIN_MS  Wait after appending so WebSocket can flush before browser closes (default: 3000)
  *   TEXT_SYNC_STABLE_MS Poll interval while waiting for textarea to finish loading (default: 400)
  *   TEXT_SYNC_STABLE_TICKS Value unchanged this many polls => stable (default: 4)
+ *   COLLECTOR_SETTLE_MS  Extra wait after load so GDTM can inject #udip / #txId (default: 2000)
  */
 
 import { chromium, firefox, webkit } from 'playwright';
@@ -34,6 +35,7 @@ const HEADLESS =
 const TEXT_SYNC_DRAIN_MS = Number(process.env.TEXT_SYNC_DRAIN_MS || 3000);
 const TEXT_SYNC_STABLE_MS = Number(process.env.TEXT_SYNC_STABLE_MS || 400);
 const TEXT_SYNC_STABLE_TICKS = Number(process.env.TEXT_SYNC_STABLE_TICKS || 4);
+const COLLECTOR_SETTLE_MS = Number(process.env.COLLECTOR_SETTLE_MS || 2000);
 
 const DEFAULT_BROWSERS = ['chrome', 'firefox', 'chromium'];
 
@@ -110,29 +112,67 @@ function stripClipboardNoise(s) {
 }
 
 /**
+ * Find #udip / #txId on the main document or inside a child frame (same-origin iframes).
+ * @param {import('playwright').Page} page
+ */
+async function locateKasmInputLocators(page) {
+  const tryLocators = (root) => ({
+    udip: root.locator('#udip'),
+    txIdInput: root.locator('#txId'),
+  });
+
+  let { udip, txIdInput } = tryLocators(page);
+  const hasPair = async () =>
+    (await udip.count()) > 0 && (await txIdInput.count()) > 0;
+
+  if (await hasPair()) return { udip, txIdInput };
+
+  for (const frame of page.frames()) {
+    if (frame === page.mainFrame()) continue;
+    ({ udip, txIdInput } = tryLocators(frame));
+    if (await hasPair()) return { udip, txIdInput };
+  }
+
+  return tryLocators(page);
+}
+
+/**
  * Read payload and transaction id from KASM test page inputs (populated by GDTM snippet).
  * @param {import('playwright').Page} page
  */
 async function obtainKasmPayloadAndTx(page) {
-  const udip = page.locator('#udip');
-  const txIdInput = page.locator('#txId');
-  await udip.waitFor({ state: 'visible', timeout: 120000 });
-  await txIdInput.waitFor({ state: 'visible', timeout: 120000 });
+  const { udip, txIdInput } = await locateKasmInputLocators(page);
+
+  // `visible` never resolves if inputs are hidden (display:none) until filled — use `attached`.
+  await udip.first().waitFor({ state: 'attached', timeout: 120000 });
+  await txIdInput.first().waitFor({ state: 'attached', timeout: 120000 });
 
   const deadline = Date.now() + 120000;
   let payload = '';
   let txId = '';
+  let lastLog = 0;
   while (Date.now() < deadline) {
-    payload = stripClipboardNoise((await udip.inputValue().catch(() => '')) || '');
-    txId = stripClipboardNoise((await txIdInput.inputValue().catch(() => '')) || '');
+    payload = stripClipboardNoise(
+      (await udip.first().inputValue().catch(() => '')) || '',
+    );
+    txId = stripClipboardNoise(
+      (await txIdInput.first().inputValue().catch(() => '')) || '',
+    );
     if (payload.length >= 16 || looksLikePayload(payload)) break;
     if (payload.length >= 8 && txId.length > 0) break;
+    const now = Date.now();
+    if (now - lastLog > 10000) {
+      lastLog = now;
+      process.stderr.write(
+        'Still waiting for #udip / #txId values (snippet may still be loading)…\n',
+      );
+    }
     await page.waitForTimeout(400);
   }
 
   if (!payload || payload.length < 8) {
     throw new Error(
-      `Could not read payload from #udip. Open ${COLLECTOR_URL} and confirm inputs are populated.`,
+      `Could not read payload from #udip. Open ${COLLECTOR_URL} and confirm inputs exist (see DOM / iframes).`,
     );
   }
   return { payload: payload.trim(), txId: txId.trim() };
@@ -241,7 +281,9 @@ async function runOneBrowser(browser, displayName) {
   }
 
   await page.goto(COLLECTOR_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
-  await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+  // Avoid `networkidle` — analytics / WebSockets often keep connections open so it may never resolve.
+  await page.waitForLoadState('load', { timeout: 60000 }).catch(() => {});
+  await page.waitForTimeout(COLLECTOR_SETTLE_MS);
 
   const { payload, txId } = await obtainKasmPayloadAndTx(page);
   process.stderr.write(

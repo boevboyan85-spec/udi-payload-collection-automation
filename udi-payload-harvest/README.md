@@ -65,6 +65,7 @@ npm run collect
 | `TEXT_SYNC_DRAIN_MS` | `3000` — wait after each append so WebSocket sync can flush before the browser closes |
 | `TEXT_SYNC_STABLE_MS` | `400` — poll interval while waiting for `#text` to finish loading from sync |
 | `TEXT_SYNC_STABLE_TICKS` | `4` — how many unchanged polls count as “stable” |
+| `COLLECTOR_SETTLE_MS` | `2000` — extra wait after `kasm.html` loads so GDTM can fill `#udip` / `#txId` |
 
 ## Headless
 
@@ -89,7 +90,12 @@ HEADLESS=1 npm run collect
 **Empty payload / missing txId**
 
 - Open `COLLECTOR_URL` manually and confirm **`#udip`** and **`#txId`** are filled after the GDTM snippet runs.
-- Check stderr for **`Payload captured (N chars), txId: …`**. If `#udip` stays empty, increase wait or fix network / snippet on the page.
+- Check stderr for **`Payload captured (N chars), txId: …`**. If `#udip` stays empty, increase **`COLLECTOR_SETTLE_MS`** (e.g. `5000`) or fix network / snippet on the page.
+
+**Hangs after the page opens**
+
+- The script no longer waits for **`networkidle`** (analytics/WebSockets often prevent it from ever finishing). It waits for **`load`**, then **`COLLECTOR_SETTLE_MS`**, then **`#udip` / `#txId` attached** (not only *visible*, so hidden inputs still count).
+- If it still stalls, confirm the IDs in DevTools; inputs inside a **same-origin iframe** are handled. **Cross-origin** iframes cannot be read from the parent page — run against a page that exposes fields on the top document or use a proxy host.
 
 **Sync page shows nothing (collector looked fine)**
 
