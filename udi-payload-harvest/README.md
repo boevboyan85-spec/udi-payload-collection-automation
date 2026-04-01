@@ -96,6 +96,10 @@ HEADLESS=1 npm run collect
 
 - Many real-time editors use **React** (controlled `<textarea>`). The script sets `#text` via the native `value` setter and dispatches `input` / `InputEvent` so sync libraries see updates; if yours still ignores it, record the framework and we can add a targeted hook.
 
+**Literal “undefined” when the box was empty**
+
+- Empty synced values are normalized (Playwright / React can otherwise surface the literal string `undefined`). A single `input` event is sent to avoid double React updates flashing junk before the real payload.
+
 **Clipboard still empty**
 
 - Some environments block `navigator.clipboard` even after `grantPermissions`. Rely on DOM extraction or copy manually once and extend selectors.

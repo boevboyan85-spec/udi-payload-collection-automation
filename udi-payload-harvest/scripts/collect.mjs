@@ -40,6 +40,30 @@ const TEXT_SYNC_STABLE_TICKS = Number(process.env.TEXT_SYNC_STABLE_TICKS || 4);
 
 const DEFAULT_BROWSERS = ['chrome', 'firefox', 'chromium'];
 
+/**
+ * Playwright may resolve inputValue() to undefined; String(undefined) is the literal word "undefined".
+ * Some React stacks also briefly surface the literal strings "undefined" / "null" when empty.
+ * @param {unknown} v
+ */
+function normalizeSyncedText(v) {
+  if (v == null) return '';
+  const s = String(v);
+  if (s === 'undefined' || s === 'null') return '';
+  return s;
+}
+
+/**
+ * @param {import('playwright').Locator} textarea
+ */
+async function readTextareaValue(textarea) {
+  try {
+    const v = await textarea.inputValue();
+    return normalizeSyncedText(v);
+  } catch {
+    return '';
+  }
+}
+
 function parseBrowserList() {
   const raw = process.env.UDIBROWSERS || DEFAULT_BROWSERS.join(',');
   return raw
@@ -197,11 +221,11 @@ async function grantClipboard(context, origins) {
 async function waitForStableTextareaValue(page, textarea) {
   const maxWaitMs = 25000;
   const start = Date.now();
-  let prev = await textarea.inputValue().catch(() => '');
+  let prev = await readTextareaValue(textarea);
   let stableCount = 0;
   while (Date.now() - start < maxWaitMs) {
     await page.waitForTimeout(TEXT_SYNC_STABLE_MS);
-    const cur = await textarea.inputValue().catch(() => '');
+    const cur = await readTextareaValue(textarea);
     if (cur === prev) {
       stableCount += 1;
       if (stableCount >= TEXT_SYNC_STABLE_TICKS) return cur;
@@ -210,7 +234,7 @@ async function waitForStableTextareaValue(page, textarea) {
       prev = cur;
     }
   }
-  return await textarea.inputValue().catch(() => '');
+  return await readTextareaValue(textarea);
 }
 
 /**
@@ -226,8 +250,8 @@ async function appendToSharedText(page, block) {
 
   if (hasTextarea) {
     await textarea.waitFor({ state: 'visible', timeout: 30000 });
-    const existing = String(
-      (await waitForStableTextareaValue(page, textarea)) ?? '',
+    const existing = normalizeSyncedText(
+      await waitForStableTextareaValue(page, textarea),
     );
     const next = existing + String(block ?? '');
     await textarea.click();
@@ -244,8 +268,7 @@ async function appendToSharedText(page, block) {
         } else {
           el.value = v;
         }
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
+        // One input event: duplicate Event + InputEvent can confuse React and flash the literal "undefined".
         try {
           const opts =
             app.length <= 8000
@@ -257,8 +280,9 @@ async function appendToSharedText(page, block) {
               : { bubbles: true, inputType: 'insertFromPaste' };
           el.dispatchEvent(new InputEvent('input', opts));
         } catch {
-          /* InputEvent unsupported */
+          el.dispatchEvent(new Event('input', { bubbles: true }));
         }
+        el.dispatchEvent(new Event('change', { bubbles: true }));
       },
       { fullValue: next, appendedBlock: block },
     );
