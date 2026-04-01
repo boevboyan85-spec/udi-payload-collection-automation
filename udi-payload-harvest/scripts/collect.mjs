@@ -19,6 +19,8 @@
  *   RESULTS_FILE       Path to JSONL log (default: <project>/results/txids.jsonl)
  *   SKIP_RESULTS_FILE  Set to 1 to disable writing txId records
  *   AUTO_PUSH_RESULTS  Set to 0/false to skip git commit+push after the last browser (default: on)
+ *   GITHUB_USERNAME     For HTTPS push without prompts (use with GITHUB_TOKEN)
+ *   GITHUB_TOKEN        GitHub PAT for git push over HTTPS (never commit this value)
  */
 
 import { spawnSync } from 'node:child_process';
@@ -51,26 +53,32 @@ const DEFAULT_RESULTS_FILE = path.join(PROJECT_ROOT, 'results', 'txids.jsonl');
 
 const DEFAULT_BROWSERS = ['chrome', 'firefox', 'chromium'];
 
+/** Rows collected in the current `npm run collect` only (replaces file on each run). */
+let currentRunTxRows = [];
+
+function getResultsFilePath() {
+  return process.env.RESULTS_FILE && process.env.RESULTS_FILE.length > 0
+    ? path.isAbsolute(process.env.RESULTS_FILE)
+      ? process.env.RESULTS_FILE
+      : path.join(PROJECT_ROOT, process.env.RESULTS_FILE)
+    : DEFAULT_RESULTS_FILE;
+}
+
 /**
- * Append one JSON object per line (JSONL) for downstream consumption.
- * @param {{ txId: string, browserName: string, browserVersion: string, fetchedAt: string }} row
+ * Overwrite JSONL with **only this run’s** rows (previous file contents are discarded).
  */
-function appendTxIdRecord(row) {
+function writeTxIdResultsFile() {
   if (process.env.SKIP_RESULTS_FILE === '1' || process.env.SKIP_RESULTS_FILE === 'true') {
     return;
   }
-  const dest =
-    process.env.RESULTS_FILE && process.env.RESULTS_FILE.length > 0
-      ? path.isAbsolute(process.env.RESULTS_FILE)
-        ? process.env.RESULTS_FILE
-        : path.join(PROJECT_ROOT, process.env.RESULTS_FILE)
-      : DEFAULT_RESULTS_FILE;
+  const dest = getResultsFilePath();
   try {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
-    const line = `${JSON.stringify(row)}\n`;
-    fs.appendFileSync(dest, line, 'utf8');
+    const lines = currentRunTxRows.map((r) => JSON.stringify(r));
+    const body = lines.length ? `${lines.join('\n')}\n` : '';
+    fs.writeFileSync(dest, body, 'utf8');
     process.stderr.write(
-      `Appended txId record (${row.browserName}) → ${path.relative(PROJECT_ROOT, dest)}\n`,
+      `Wrote ${currentRunTxRows.length} txId row(s) (this run only, file replaced) → ${path.relative(PROJECT_ROOT, dest)}\n`,
     );
   } catch (e) {
     process.stderr.write(`Warning: could not write results file: ${e?.message || e}\n`);
@@ -86,13 +94,12 @@ function maybeAutoPushResults() {
     process.stderr.write('Auto-push skipped (AUTO_PUSH_RESULTS=0).\n');
     return;
   }
+  if (process.env.SKIP_RESULTS_FILE === '1' || process.env.SKIP_RESULTS_FILE === 'true') {
+    process.stderr.write('Auto-push skipped (SKIP_RESULTS_FILE=1).\n');
+    return;
+  }
 
-  const dest =
-    process.env.RESULTS_FILE && process.env.RESULTS_FILE.length > 0
-      ? path.isAbsolute(process.env.RESULTS_FILE)
-        ? process.env.RESULTS_FILE
-        : path.join(PROJECT_ROOT, process.env.RESULTS_FILE)
-      : DEFAULT_RESULTS_FILE;
+  const dest = getResultsFilePath();
 
   if (!fs.existsSync(dest)) {
     process.stderr.write('Auto-push skipped: no results file on disk.\n');
@@ -385,7 +392,7 @@ async function runOneBrowser(browser, displayName) {
 
   await appendToSharedText(page, block);
 
-  appendTxIdRecord({
+  currentRunTxRows.push({
     txId: txId || '',
     browserName: displayName,
     browserVersion: String(version || 'unknown'),
@@ -465,6 +472,7 @@ function displayLabel(kind) {
 }
 
 async function main() {
+  currentRunTxRows = [];
   const kinds = parseBrowserList();
   const failures = [];
 
@@ -490,6 +498,7 @@ async function main() {
     }
   }
 
+  writeTxIdResultsFile();
   maybeAutoPushResults();
 
   if (failures.length) {

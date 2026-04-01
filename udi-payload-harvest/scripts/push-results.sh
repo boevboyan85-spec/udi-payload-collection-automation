@@ -31,4 +31,24 @@ if [[ -n "${GIT_AUTHOR_NAME:-}" && -n "${GIT_AUTHOR_EMAIL:-}" ]]; then
 fi
 
 git commit -m "$MSG"
-git push origin develop
+
+# Optional: non-interactive HTTPS push (set GITHUB_USERNAME + GITHUB_TOKEN; never commit the token).
+# Revoke any token that was ever pasted into chat or committed.
+ORIGIN=$(git remote get-url origin)
+REPO_PATH="${ORIGIN#https://github.com/}"
+REPO_PATH="${REPO_PATH#http://github.com/}"
+REPO_PATH="${REPO_PATH#git@github.com:}"
+REPO_PATH="${REPO_PATH%.git}"
+
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  if [[ -z "$REPO_PATH" || "$REPO_PATH" == "$ORIGIN" ]]; then
+    echo "Could not parse owner/repo from remote: $ORIGIN" >&2
+    exit 1
+  fi
+  U="${GITHUB_USERNAME:-${GIT_USERNAME:-git}}"
+  export GIT_TERMINAL_PROMPT=0
+  git push "https://${U}:${GITHUB_TOKEN}@github.com/${REPO_PATH}.git" HEAD:develop
+else
+  export GIT_TERMINAL_PROMPT=0
+  git push origin develop
+fi

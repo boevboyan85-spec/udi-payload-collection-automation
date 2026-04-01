@@ -85,11 +85,11 @@ HEADLESS=1 npm run collect
    `txId: …`  
    User-Agent, blank line, then payload.
 
-4. **Append a machine-readable row** to [`results/txids.jsonl`](results/txids.jsonl) (JSON Lines: one JSON object per line).
+4. After all browsers finish, **overwrite** [`results/txids.jsonl`](results/txids.jsonl) with **only this run’s** rows (JSON Lines — previous runs are not kept in the file).
 
 ### `results/txids.jsonl` (JSONL)
 
-Each successful browser run appends one line:
+Each **successful** browser in the current run becomes one line. The file is **replaced** on every `npm run collect` (no historical accumulation in the file).
 
 ```json
 {"txId":"…","browserName":"Google Chrome","browserVersion":"131.0.6778.0","fetchedAt":"2026-04-01T14:00:00.000Z"}
@@ -102,17 +102,24 @@ Each successful browser run appends one line:
 | `browserVersion` | Playwright `browser.version()` (engine/browser build string) |
 | `fetchedAt` | ISO-8601 timestamp when the row was written |
 
-**Why JSONL:** easy to append without rewriting the file; easy to stream in another automation (`readline` / `jq -c .`). Use **`SKIP_RESULTS_FILE=1`** to disable writing.
+**Why JSONL:** one object per line; easy to parse in another automation (`readline` / `jq -c .`). Use **`SKIP_RESULTS_FILE=1`** to disable writing.
 
 | Env | Default |
 | --- | ------- |
 | `RESULTS_FILE` | `<project>/results/txids.jsonl` (override path; relative paths are under the project root) |
-| `SKIP_RESULTS_FILE` | unset — set to `1` to skip the file |
+| `SKIP_RESULTS_FILE` | unset — set to `1` to skip the file (also skips auto-push) |
 | `AUTO_PUSH_RESULTS` | **on** by default — after the last browser, runs **`scripts/push-results.sh`** (commit + **`git push origin develop`**). Set to **`0`** or **`false`** to disable. |
+| `GITHUB_USERNAME` | GitHub login for **HTTPS** push when **`GITHUB_TOKEN`** is set (no username prompt) |
+| `GITHUB_TOKEN` | [Personal access token](https://github.com/settings/tokens) (`repo` scope). **Never commit this.** Prefer SSH keys for daily use; HTTPS+token is optional for headless KASM. |
 
 ### Push results to GitHub (`develop`)
 
-**Automatic (default):** after every `npm run collect`, if **`results/txids.jsonl`** exists and you are inside a **git** clone with **`origin`** and credentials, the script commits changes and pushes **`develop`**. Use **`AUTO_PUSH_RESULTS=0`** to skip.
+**Automatic (default):** after every `npm run collect`, the results file is written, then (unless **`SKIP_RESULTS_FILE=1`**) the script commits **`results/txids.jsonl`** and pushes **`develop`**.
+
+- **SSH:** configure `origin` as `git@github.com:…` and use your SSH key — no token needed.
+- **HTTPS without prompts:** set **`GITHUB_USERNAME`** (your GitHub login) and **`GITHUB_TOKEN`** (PAT) in the environment before `npm run collect`. **`push-results.sh`** uses them for `git push` so the terminal does not ask for a password. **Do not put the token in the repo** — use `export` in `~/.bashrc`, a local file listed in `.gitignore`, or your secret manager. **Revoke any token that was exposed** (e.g. pasted in chat) and create a new one.
+
+Use **`AUTO_PUSH_RESULTS=0`** to skip pushing.
 
 **Git author on KASM (required for `git commit`):** **Option C (recommended)** — set a **global** identity once:
 
