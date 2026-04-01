@@ -15,6 +15,7 @@
 #
 # Installs Tor Browser: official tarball on amd64 (UDIBROWSERS=tor → TOR_BROWSER_PATH). Set SKIP_TOR_BROWSER=1
 # to skip. Override version: TOR_BROWSER_VERSION=15.0.8
+# If downloads get HTTP 403, curl uses a browser User-Agent (override: TOR_CURL_USER_AGENT).
 #
 set -euo pipefail
 
@@ -78,21 +79,44 @@ if [[ "${SKIP_TOR_BROWSER:-}" != "1" ]]; then
     else
       echo "Installing Tor Browser ${TB_VER} (official tarball, x86_64)..."
       TB_FILE="tor-browser-linux-x86_64-${TB_VER}.tar.xz"
-      TB_URL="https://dist.torproject.org/torbrowser/${TB_VER}/${TB_FILE}"
+      # dist.torproject.org often returns 403 to curl's default User-Agent; use a normal browser string.
+      TOR_CURL_UA="${TOR_CURL_USER_AGENT:-Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0}"
+      TB_URLS=(
+        "https://www.torproject.org/dist/torbrowser/${TB_VER}/${TB_FILE}"
+        "https://dist.torproject.org/torbrowser/${TB_VER}/${TB_FILE}"
+        "https://archive.torproject.org/tor-package-archive/torbrowser/${TB_VER}/${TB_FILE}"
+      )
       TMP_TB="$(mktemp -d)"
       trap 'rm -rf "$TMP_TB"' EXIT
-      curl -fSL "$TB_URL" -o "$TMP_TB/$TB_FILE"
-      PARENT="$(dirname "$TB_HOME")"
-      mkdir -p "$PARENT"
-      rm -rf "$TB_HOME"
-      tar -xJf "$TMP_TB/$TB_FILE" -C "$PARENT"
-      rm -rf "$TMP_TB"
-      trap - EXIT
-      if [[ ! -x "$TB_FIREFOX" ]]; then
-        echo "Warning: expected $TB_FIREFOX missing after extract; check TOR_BROWSER_VERSION / tarball layout."
+      TB_DOWNLOADED=0
+      for TB_URL_TRY in "${TB_URLS[@]}"; do
+        echo "Downloading: $TB_URL_TRY"
+        if curl -fSL --connect-timeout 60 --retry 2 --retry-delay 3 \
+          -A "$TOR_CURL_UA" "$TB_URL_TRY" -o "$TMP_TB/$TB_FILE"; then
+          TB_DOWNLOADED=1
+          break
+        fi
+        echo "Mirror failed, trying next..."
+      done
+      if [[ "$TB_DOWNLOADED" != "1" ]]; then
+        echo "Warning: Tor Browser download failed (403/firewall/proxy). Install Tor manually or set SKIP_TOR_BROWSER=1. Continuing setup."
+        rm -rf "$TMP_TB"
+        trap - EXIT
+      else
+        PARENT="$(dirname "$TB_HOME")"
+        mkdir -p "$PARENT"
+        rm -rf "$TB_HOME"
+        tar -xJf "$TMP_TB/$TB_FILE" -C "$PARENT"
+        rm -rf "$TMP_TB"
+        trap - EXIT
+        if [[ ! -x "$TB_FIREFOX" ]]; then
+          echo "Warning: expected $TB_FIREFOX missing after extract; check TOR_BROWSER_VERSION / tarball layout."
+        fi
       fi
     fi
-    export TOR_BROWSER_PATH="$TB_FIREFOX"
+    if [[ -x "$TB_FIREFOX" ]]; then
+      export TOR_BROWSER_PATH="$TB_FIREFOX"
+    fi
   else
     echo "Tor Browser: no official Linux ${DPKG_ARCH} tarball in this script; installing torbrowser-launcher."
     echo "Run it once from the desktop to download Tor, then set TOR_BROWSER_PATH to .../Browser/firefox under ~/.local/share/torbrowser"

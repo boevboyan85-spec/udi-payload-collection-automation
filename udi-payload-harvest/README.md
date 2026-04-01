@@ -24,7 +24,7 @@ chmod +x run-kasm.sh scripts/collect.mjs
 ./run-kasm.sh
 ```
 
-**VM bootstrap:** [`setup-kasm-ubuntu.sh`](setup-kasm-ubuntu.sh) installs Node 20, Playwright deps/browsers, Brave, and **Tor Browser** on **amd64** (official tarball → `~/tor-browser`, **`TOR_BROWSER_PATH`**). On **arm64** it installs **`torbrowser-launcher`** (run once from the GUI to download Tor, then set **`TOR_BROWSER_PATH`**). Skip Tor with **`SKIP_TOR_BROWSER=1`**; pin a version with **`TOR_BROWSER_VERSION`**. **`run-kasm.sh`** exports **`TOR_BROWSER_PATH`** automatically when `~/tor-browser/Browser/firefox` exists and the variable is unset.
+**VM bootstrap:** [`setup-kasm-ubuntu.sh`](setup-kasm-ubuntu.sh) installs Node 20, Playwright deps/browsers, Brave, and **Tor Browser** on **amd64** (official tarball → `~/tor-browser`, **`TOR_BROWSER_PATH`**). Downloads use a browser **User-Agent** and try several Tor mirrors (some networks return **403** to plain `curl`). On **arm64** it installs **`torbrowser-launcher`** (run once from the GUI to download Tor, then set **`TOR_BROWSER_PATH`**). Skip Tor with **`SKIP_TOR_BROWSER=1`**; pin a version with **`TOR_BROWSER_VERSION`**. **`run-kasm.sh`** exports **`TOR_BROWSER_PATH`** automatically when `~/tor-browser/Browser/firefox` exists and the variable is unset.
 
 Or manually:
 
