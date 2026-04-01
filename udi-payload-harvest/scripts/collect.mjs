@@ -54,6 +54,14 @@ function resolveExecutable(name, defaults) {
   return defaults[0];
 }
 
+/** Heuristic: encrypted / encoded collector blobs are usually high alphanumeric ratio. */
+function looksLikePayload(s) {
+  if (!s || s.length < 24) return false;
+  const sample = s.slice(0, 500);
+  const enc = (sample.match(/[a-zA-Z0-9+/=_:-]/g) || []).length / sample.length;
+  return enc > 0.82;
+}
+
 /**
  * @param {import('playwright').Page} page
  */
@@ -64,45 +72,98 @@ async function extractPayloadFromDom(page) {
       if ('value' in el && typeof el.value === 'string') return el.value;
       return el.innerText || '';
     };
+    const candidates = [];
+    const push = (t) => {
+      const v = (t || '').trim();
+      if (v.length > 16) candidates.push(v);
+    };
     const selectors = [
       '#payload',
+      '#collectedPayload',
+      '#collected-payload',
       '[data-payload]',
+      '[id*="payload" i]',
       'textarea[name*="payload" i]',
       'pre#payload',
       'code#payload',
+      '.payload',
     ];
     for (const sel of selectors) {
       const el = document.querySelector(sel);
-      const t = textOf(el).trim();
-      if (t.length > 32) return t;
+      push(textOf(el));
     }
-    const pres = [...document.querySelectorAll('pre')];
-    for (const pre of pres) {
-      const t = textOf(pre).trim();
-      if (t.length > 32 && !/^collected payload/i.test(t)) return t;
+    for (const pre of document.querySelectorAll('pre')) {
+      push(textOf(pre));
     }
-    const codes = [...document.querySelectorAll('code')];
-    for (const c of codes) {
-      const t = textOf(c).trim();
-      if (t.length > 32) return t;
+    for (const c of document.querySelectorAll('code')) {
+      push(textOf(c));
     }
-    return null;
+    if (candidates.length === 0) return null;
+    return candidates.reduce((a, b) => (b.length > a.length ? b : a));
   });
 }
 
 /**
  * @param {import('playwright').Page} page
  */
-async function waitAndCopyPayload(page) {
+async function waitForCopyButtonReady(page) {
   const copyBtn = page.getByRole('button', { name: /copy\s*payload/i }).first();
   await copyBtn.waitFor({ state: 'visible', timeout: 120000 });
-  await copyBtn.click();
-  await page.waitForTimeout(500);
-  try {
-    return await page.evaluate(() => navigator.clipboard.readText());
-  } catch {
-    return null;
+  await page.waitForFunction(
+    () => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const btn = buttons.find((b) =>
+        /copy\s*payload/i.test((b.textContent || '').trim()),
+      );
+      return btn && !btn.disabled && btn.offsetParent !== null;
+    },
+    { timeout: 120000 },
+  );
+  return copyBtn;
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').Locator} copyBtn
+ */
+async function readClipboardWithRetries(page, copyBtn) {
+  let best = '';
+  for (let i = 0; i < 10; i++) {
+    await copyBtn.click();
+    await page.waitForTimeout(450);
+    let clip = '';
+    try {
+      clip = (await page.evaluate(() => navigator.clipboard.readText())) || '';
+    } catch {
+      clip = '';
+    }
+    clip = clip.trim();
+    if (clip.length > best.length) best = clip;
+    if (looksLikePayload(clip)) return clip;
+    await page.waitForTimeout(500);
   }
+  return best;
+}
+
+/**
+ * @param {import('playwright').Page} page
+ */
+async function obtainPayload(page) {
+  await waitForCopyButtonReady(page);
+  await page.waitForTimeout(1500);
+
+  let dom = await extractPayloadFromDom(page);
+  if (dom && looksLikePayload(dom)) return dom.trim();
+
+  const copyBtn = page.getByRole('button', { name: /copy\s*payload/i }).first();
+  const fromClip = await readClipboardWithRetries(page, copyBtn);
+  if (fromClip && looksLikePayload(fromClip)) return fromClip.trim();
+
+  dom = await extractPayloadFromDom(page);
+  if (dom && dom.length >= 24) return dom.trim();
+  if (fromClip && fromClip.length >= 24) return fromClip.trim();
+
+  return (fromClip || dom || '').trim();
 }
 
 /**
@@ -134,14 +195,31 @@ async function appendToSharedText(page, block) {
 
   if (hasTextarea) {
     await textarea.waitFor({ state: 'visible', timeout: 30000 });
-    await textarea.evaluate(
-      (el, append) => {
-        el.value += append;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-      },
-      block,
-    );
+    await textarea.click();
+    // React / controlled inputs: plain el.value += does not update state or WebSocket sync.
+    await textarea.evaluate((el, append) => {
+      const proto = window.HTMLTextAreaElement.prototype;
+      const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+      const next = (el.value || '') + append;
+      if (desc?.set) {
+        desc.set.call(el, next);
+      } else {
+        el.value = next;
+      }
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      try {
+        const opts =
+          append.length <= 8000
+            ? { bubbles: true, inputType: 'insertFromPaste', data: append }
+            : { bubbles: true, inputType: 'insertFromPaste' };
+        el.dispatchEvent(new InputEvent('input', opts));
+      } catch {
+        /* InputEvent unsupported in very old engines */
+      }
+    }, block);
+    await textarea.blur();
+    await page.waitForTimeout(400);
     return;
   }
 
@@ -172,15 +250,13 @@ async function runOneBrowser(browser, displayName) {
   await page.goto(COLLECTOR_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
 
-  let payload = await extractPayloadFromDom(page);
+  const payload = await obtainPayload(page);
   if (!payload || payload.length < 16) {
-    payload = await waitAndCopyPayload(page);
-  }
-  if (!payload || payload.length < 8) {
     throw new Error(
-      `Could not read payload (DOM + clipboard empty). Check selectors for ${COLLECTOR_URL}`,
+      `Could not read payload (clipboard/DOM too short after Copy retries). Open ${COLLECTOR_URL} and confirm Copy Payload works manually. Payload length was ${payload ? payload.length : 0}.`,
     );
   }
+  process.stderr.write(`Payload captured (${payload.length} chars)\n`);
 
   const ua = await page.evaluate(() => navigator.userAgent);
   const ts = new Date().toISOString();

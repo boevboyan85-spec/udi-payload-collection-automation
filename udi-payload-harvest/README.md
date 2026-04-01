@@ -86,7 +86,12 @@ HEADLESS=1 npm run collect
 **Empty payload**
 
 - Open the collector in that browser manually and confirm the SDK renders a payload.
-- Inspect DOM: if the payload lives in a new element, add a selector in `scripts/collect.mjs` (`extractPayloadFromDom`).
+- The script waits until **Copy Payload** is **enabled**, then clicks it repeatedly and reads `navigator.clipboard`. Check stderr for **`Payload captured (N chars)`**; if the run throws, clipboard permissions or a blocking banner may be the cause.
+- Inspect DOM: if the payload only appears in a new element, extend `extractPayloadFromDom` in `scripts/collect.mjs`.
+
+**Sync page shows nothing (collector looked fine)**
+
+- Many real-time editors use **React** (controlled `<textarea>`). The script sets `#text` via the native `value` setter and dispatches `input` / `InputEvent` so sync libraries see updates; if yours still ignores it, record the framework and we can add a targeted hook.
 
 **Clipboard still empty**
 
