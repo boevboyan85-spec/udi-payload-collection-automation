@@ -29,6 +29,8 @@
  *   AUTO_PUSH_RESULTS  Set to 0/false to skip git commit+push after the last browser (default: on)
  *   GITHUB_USERNAME     For HTTPS push without prompts (use with GITHUB_TOKEN)
  *   GITHUB_TOKEN        GitHub PAT for git push over HTTPS (never commit this value)
+ *   GITHUB_TOKEN_FILE   If GITHUB_TOKEN is unset, push-results.sh reads the PAT from this file (one line).
+ *                       setup-kasm-ubuntu.sh also writes ~/.config/udi-payload-harvest/git-push.env (merged on push).
  *   PLAYWRIGHT_IGNORE_HTTPS_ERRORS  Default on (unset or 1/true). Set 0/false to enforce TLS.
  *                                   Firefox bundled with Playwright uses its own trust store; corp MITM
  *                                   often causes SEC_ERROR_UNKNOWN_ISSUER without this.
@@ -720,6 +722,41 @@ function writeTxIdResultsFile() {
 }
 
 /**
+ * Load ~/.config/udi-payload-harvest/git-push.env (written by setup-kasm-ubuntu.sh) so AUTO_PUSH works from
+ * non-login shells and IDEs that never source ~/.bashrc.
+ * @param {NodeJS.ProcessEnv} base
+ * @returns {NodeJS.ProcessEnv}
+ */
+function mergeUdiGitPushEnv(base) {
+  const f = path.join(
+    os.homedir(),
+    '.config',
+    'udi-payload-harvest',
+    'git-push.env',
+  );
+  if (!fs.existsSync(f)) return base;
+  const r = spawnSync(
+    'bash',
+    [
+      '-c',
+      'set -a && source "$1" && set +a && printf "%s\\0%s\\0" "${GITHUB_USERNAME-}" "${GITHUB_TOKEN-}"',
+      '_',
+      f,
+    ],
+    { encoding: 'buffer' },
+  );
+  if (r.status !== 0 || !r.stdout) return base;
+  const s = r.stdout.toString('utf8');
+  const parts = s.split('\0');
+  const username = parts[0] || '';
+  const token = parts[1] || '';
+  const out = { ...base };
+  if (username && !out.GITHUB_USERNAME) out.GITHUB_USERNAME = username;
+  if (token && !out.GITHUB_TOKEN) out.GITHUB_TOKEN = token;
+  return out;
+}
+
+/**
  * Run scripts/push-results.sh after all browsers (commit + push results/txids.jsonl to origin develop).
  */
 function maybeAutoPushResults() {
@@ -751,7 +788,7 @@ function maybeAutoPushResults() {
   const r = spawnSync('bash', [script, msg], {
     cwd: PROJECT_ROOT,
     stdio: 'inherit',
-    env: process.env,
+    env: mergeUdiGitPushEnv(process.env),
     shell: false,
   });
 

@@ -32,13 +32,20 @@ fi
 
 git commit -m "$MSG"
 
-# Optional: non-interactive HTTPS push (set GITHUB_USERNAME + GITHUB_TOKEN; never commit the token).
+# Optional: non-interactive HTTPS push (GITHUB_USERNAME + GITHUB_TOKEN; never commit the token).
+# GITHUB_TOKEN_FILE: path to a file containing the PAT only (newline trimmed) if GITHUB_TOKEN is unset.
 # Revoke any token that was ever pasted into chat or committed.
+if [[ -z "${GITHUB_TOKEN:-}" && -n "${GITHUB_TOKEN_FILE:-}" && -f "${GITHUB_TOKEN_FILE}" ]]; then
+  GITHUB_TOKEN="$(tr -d '\n\r' <"${GITHUB_TOKEN_FILE}")"
+  export GITHUB_TOKEN
+fi
+
 ORIGIN=$(git remote get-url origin)
-REPO_PATH="${ORIGIN#https://github.com/}"
-REPO_PATH="${REPO_PATH#http://github.com/}"
-REPO_PATH="${REPO_PATH#git@github.com:}"
-REPO_PATH="${REPO_PATH%.git}"
+REPO_PATH=""
+if [[ "$ORIGIN" =~ github\.com[:/]+(.+)$ ]]; then
+  REPO_PATH="${BASH_REMATCH[1]}"
+  REPO_PATH="${REPO_PATH%.git}"
+fi
 
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
   if [[ -z "$REPO_PATH" || "$REPO_PATH" == "$ORIGIN" ]]; then

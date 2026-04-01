@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Ubuntu / KASM: install Playwright deps and run multi-browser payload collection.
 set -euo pipefail
+# Non-interactive git push (same file setup-kasm-ubuntu.sh writes).
+[[ -f "${HOME}/.config/udi-payload-harvest/git-push.env" ]] && source "${HOME}/.config/udi-payload-harvest/git-push.env"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 

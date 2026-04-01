@@ -112,13 +112,14 @@ Each **successful** browser in the current run becomes one line. The file is **r
 | `AUTO_PUSH_RESULTS` | **on** by default — after the last browser, runs **`scripts/push-results.sh`** (commit + **`git push origin develop`**). Set to **`0`** or **`false`** to disable. |
 | `GITHUB_USERNAME` | GitHub login for **HTTPS** push when **`GITHUB_TOKEN`** is set (no username prompt) |
 | `GITHUB_TOKEN` | [Personal access token](https://github.com/settings/tokens) (`repo` scope). **Never commit this.** Prefer SSH keys for daily use; HTTPS+token is optional for headless KASM. |
+| `GITHUB_TOKEN_FILE` | If **`GITHUB_TOKEN`** is unset, **`push-results.sh`** reads the PAT from this path (single line). |
 
 ### Push results to GitHub (`develop`)
 
 **Automatic (default):** after every `npm run collect`, the results file is written, then (unless **`SKIP_RESULTS_FILE=1`**) the script commits **`results/txids.jsonl`** and pushes **`develop`**.
 
 - **SSH:** configure `origin` as `git@github.com:…` and use your SSH key — no token needed.
-- **HTTPS without prompts:** set **`GITHUB_USERNAME`** (your GitHub login) and **`GITHUB_TOKEN`** (PAT) in the environment before `npm run collect`. **`push-results.sh`** uses them for `git push` so the terminal does not ask for a password. **Do not put the token in the repo** — use `export` in `~/.bashrc`, a local file listed in `.gitignore`, or your secret manager. **Revoke any token that was exposed** (e.g. pasted in chat) and create a new one.
+- **HTTPS without prompts:** set **`GITHUB_USERNAME`** and **`GITHUB_TOKEN`** before `npm run collect`, or use **`GITHUB_TOKEN_FILE`**. **`setup-kasm-ubuntu.sh`** writes **`~/.config/udi-payload-harvest/git-push.env`** (mode **600**) and **`collect.mjs` merges that file** into the environment when running **`push-results.sh`**, so auto-push works even when you did not `export` in the current shell. **`run-kasm.sh`** also **`source`**s that file. **Do not commit the token.** **Revoke** any exposed PAT and create a new one.
 
 Use **`AUTO_PUSH_RESULTS=0`** to skip pushing.
 
