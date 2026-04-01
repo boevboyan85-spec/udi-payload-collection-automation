@@ -1,0 +1,20 @@
+{
+  "name": "udi-payload-harvest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "KASM/Ubuntu: collect UDI Collector payloads across browsers and append to shared text sync",
+  "type": "module",
+  "scripts": {
+    "collect": "node scripts/collect.mjs",
+    "install:browsers": "playwright install chromium firefox webkit"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

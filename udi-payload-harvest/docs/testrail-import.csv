@@ -1,0 +1,41 @@
+Title,Section,Type,Priority,Preconditions,Steps,Expected Result,References
+UDI-001 Baseline — Chrome clean profile,Baseline,Functional,High,"KASM Ubuntu; Chrome default profile; no extensions","1. Open https://gdtm-dev.globalsiteanalytics.com/index.html
+2. Wait for Collected Payload and Copy Payload
+3. Capture payload (automation or manual)
+4. Repeat 5x same session / 5x fresh profile per test design","Payload non-empty; length stable within documented tolerance; Copy succeeds",Confluence scenario S-BASE-CHR-01
+UDI-002 Baseline — Firefox clean profile,Baseline,Functional,High,"Firefox default; no extensions","1. Open collector URL
+2. Capture payload 5x as per design","Payload non-empty; repeatability documented",S-BASE-FF-01
+UDI-003 Baseline — Brave clean profile,Baseline,Functional,Medium,"Brave default","1. Open collector URL
+2. Capture payload","Payload captured; shields default noted",S-BASE-BRV-01
+UDI-004 Baseline — Opera clean profile,Baseline,Functional,Medium,"Opera default","1. Open collector URL
+2. Capture payload","Payload captured",S-BASE-OPR-01
+UDI-005 Baseline — Tor Browser clean profile,Baseline,Functional,Medium,"Tor Browser; default security","1. Open collector URL
+2. Allow scripts if required for SDK
+3. Capture payload","Payload captured or documented blocker",S-BASE-TOR-01
+UDI-010 VM — Guest vs baseline,Virtual machine,Functional,High,"Document hypervisor (KVM/VMware/etc.)","1. Capture baseline payload on reference non-VM if available OR document KASM as standard guest
+2. Compare feature set / Risk indicators vs baseline","Expected VM-related signals documented pass/fail with evidence",S-VM-01
+UDI-020 Anti-fingerprint — Firefox resistFingerprinting,Anti-fingerprint,Functional,High,"Firefox privacy.resistFingerprinting enabled","1. Enable setting; restart browser
+2. Open collector; capture payload
+3. Compare to Firefox baseline","Indicator behavior documented; false positive rate noted",S-AFP-01
+UDI-021 Anti-fingerprint — Brave shields strict,Anti-fingerprint,Functional,Medium,"Brave Shields strict","1. Set strict; open collector
+2. Capture payload","Compare to Brave baseline; document breakage if any",S-AFP-02
+UDI-022 Anti-fingerprint — uBlock or similar extension,Anti-fingerprint,Functional,Medium,"Extension installed","1. Open collector
+2. Capture payload / note if SDK blocked","Document outcome",S-AFP-03
+UDI-030 Developer tools — DevTools open,Developer tools,Functional,High,"Same browser as baseline","1. Open collector
+2. Open DevTools before or after load per design
+3. Capture payload","Compare to baseline; DevTools signal pass/fail",S-DEV-01
+UDI-031 Developer tools — DevTools closed,Developer tools,Functional,Medium,"Clean session","1. Ensure DevTools closed
+2. Capture payload","Matches baseline expectation",S-DEV-02
+UDI-040 Automation / bot — Playwright-driven session,Automation / bots,Functional,High,"Playwright launches browser (see udi-payload-harvest)","1. Run collect script or manual Playwright
+2. Capture payload from that session
+3. Record navigator.webdriver etc.","Bot/automation indicators documented vs human baseline",S-BOT-01
+UDI-041 Automation / bot — Selenium-driven session,Automation / bots,Functional,Medium,"Selenium WebDriver","1. Drive browser to collector
+2. Capture payload","Compare to human baseline",S-BOT-02
+UDI-050 RAT / remote access — Lab synthetic only,RAT / remote desktop,Functional,Low,"Security-approved lab scenario only","1. Execute approved synthetic RAT/remote pattern
+2. Capture payload during session
+3. Map to Risk indicators","Pass/fail with security sign-off; no real malware",S-RAT-01
+UDI-060 Negative — Ad/script blocker blocks collector,Negative / robustness,Functional,Medium,"Aggressive blocker","1. Open collector
+2. Observe console/network","Graceful failure or payload absence documented",S-NEG-01
+UDI-061 Negative — Offline / flaky network,Negative / robustness,Functional,Low,"Simulate offline mid-load","1. Load page; interrupt network per design","Recovery or error documented",S-NEG-02
+UDI-070 Regression — SDK version bump smoke,Regression,Functional,High,"New SDK build","1. Open collector on reference URL
+2. Smoke capture payload","No regression vs prior baseline checklist",S-REG-01
