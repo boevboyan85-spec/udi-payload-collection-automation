@@ -46,7 +46,7 @@ Comma-separated list in **`UDIBROWSERS`** (default: `chrome,firefox,chromium`):
 | `opera` | `OPERA_PATH` or `/usr/bin/opera` |
 | `firefox` | System Firefox or `FIREFOX_PATH` |
 | `tor` | `TOR_BROWSER_PATH` or `/usr/bin/tor-browser` |
-| `webkit` | Playwright WebKit (not Safari). Clipboard **permission grants** are skipped. **Payload is read from the DOM only** (clipboard is ignored) so stale terminal/Playwright error text cannot be mistaken for the payload. |
+| `webkit` | Playwright WebKit (not Safari). Payload comes from **`#udip` / `#txId`** on the collector page (same as other browsers). |
 
 Example:
 
@@ -60,7 +60,7 @@ npm run collect
 
 | Variable | Default |
 | -------- | ------- |
-| `COLLECTOR_URL` | `https://gdtm-dev.globalsiteanalytics.com/index.html` |
+| `COLLECTOR_URL` | `https://gdtm-dev.globalsiteanalytics.com/kasm.html` (reads **`#udip`** payload and **`#txId`**) |
 | `TEXT_SYNC_URL` | `https://gdtm-dev.globalsiteanalytics.com/text.html` |
 | `TEXT_SYNC_DRAIN_MS` | `3000` — wait after each append so WebSocket sync can flush before the browser closes |
 | `TEXT_SYNC_STABLE_MS` | `400` — poll interval while waiting for `#text` to finish loading from sync |
@@ -76,33 +76,28 @@ HEADLESS=1 npm run collect
 
 ## How collection works
 
-1. For each browser: new context, grant **clipboard-read/write** for collector and text origins.
-2. Open collector page, wait for **Copy Payload**.
-3. Try to read payload from **DOM** (`pre`, `code`, `#payload`, etc.); if missing, **click Copy** and read **clipboard**.
-4. Open the shared text page, **append** to **`textarea#text`** (or **`contenteditable`** if that element is absent):
+1. For each browser: new context, open **[kasm.html](https://gdtm-dev.globalsiteanalytics.com/kasm.html)** (or `COLLECTOR_URL`).
+2. Wait for **`input#udip`** and **`input#txId`**, then poll until **`#udip`** has the payload (GDTM snippet fills these asynchronously).
+3. Open the shared text page, **append** to **`textarea#text`** (or **`contenteditable`** if that element is absent):
 
    `--- BROWSER: <name> | engine: <version> | <ISO time> ---`  
-   User-Agent line, then payload.
+   `txId: …`  
+   User-Agent, blank line, then payload.
 
 ## Troubleshooting
 
-**Empty payload**
+**Empty payload / missing txId**
 
-- Open the collector in that browser manually and confirm the SDK renders a payload.
-- The script waits until **Copy Payload** is **enabled**, then clicks it repeatedly and reads `navigator.clipboard`. Check stderr for **`Payload captured (N chars)`**; if the run throws, clipboard permissions or a blocking banner may be the cause.
-- Inspect DOM: if the payload only appears in a new element, extend `extractPayloadFromDom` in `scripts/collect.mjs`.
+- Open `COLLECTOR_URL` manually and confirm **`#udip`** and **`#txId`** are filled after the GDTM snippet runs.
+- Check stderr for **`Payload captured (N chars), txId: …`**. If `#udip` stays empty, increase wait or fix network / snippet on the page.
 
 **Sync page shows nothing (collector looked fine)**
 
 - Many real-time editors use **React** (controlled `<textarea>`). The script sets `#text` via the native `value` setter and dispatches `input` / `InputEvent` so sync libraries see updates; if yours still ignores it, record the framework and we can add a targeted hook.
 
-**Literal “undefined” when the box was empty**
+**Literal “undefined” when the sync box was empty**
 
-- Empty synced values are normalized (Playwright / React can otherwise surface the literal string `undefined`). A single `input` event is sent to avoid double React updates flashing junk before the real payload.
-
-**Clipboard still empty**
-
-- Some environments block `navigator.clipboard` even after `grantPermissions`. Rely on DOM extraction or copy manually once and extend selectors.
+- Empty synced values are normalized (Playwright / React can otherwise surface the literal string `undefined`). A single `input` event is sent to avoid double React updates flashing junk before the real content.
 
 **Brave / Opera / Tor not found**
 

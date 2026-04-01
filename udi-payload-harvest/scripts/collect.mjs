@@ -5,7 +5,7 @@
  *
  * Env:
  *   UDIBROWSERS       Comma list: chrome,chromium,firefox,brave,opera,tor,webkit (default: chrome,firefox,chromium)
- *   COLLECTOR_URL     Default: https://gdtm-dev.globalsiteanalytics.com/index.html
+ *   COLLECTOR_URL     Default: https://gdtm-dev.globalsiteanalytics.com/kasm.html (#udip payload, #txId)
  *   TEXT_SYNC_URL     Default: https://gdtm-dev.globalsiteanalytics.com/text.html
  *   HEADLESS          1/true for headless (default: false — use headed on KASM)
  *   BRAVE_PATH        Executable for Brave (default: /usr/bin/brave-browser)
@@ -23,16 +23,13 @@ import process from 'node:process';
 
 const COLLECTOR_URL =
   process.env.COLLECTOR_URL ||
-  'https://gdtm-dev.globalsiteanalytics.com/index.html';
+  'https://gdtm-dev.globalsiteanalytics.com/kasm.html';
 const TEXT_SYNC_URL =
   process.env.TEXT_SYNC_URL ||
   'https://gdtm-dev.globalsiteanalytics.com/text.html';
 
 const HEADLESS =
   process.env.HEADLESS === '1' || process.env.HEADLESS === 'true';
-
-const COLLECTOR_ORIGIN = new URL(COLLECTOR_URL).origin;
-const TEXT_ORIGIN = new URL(TEXT_SYNC_URL).origin;
 
 const TEXT_SYNC_DRAIN_MS = Number(process.env.TEXT_SYNC_DRAIN_MS || 3000);
 const TEXT_SYNC_STABLE_MS = Number(process.env.TEXT_SYNC_STABLE_MS || 400);
@@ -113,154 +110,32 @@ function stripClipboardNoise(s) {
 }
 
 /**
+ * Read payload and transaction id from KASM test page inputs (populated by GDTM snippet).
  * @param {import('playwright').Page} page
  */
-async function extractPayloadFromDom(page) {
-  return page.evaluate(() => {
-    const textOf = (el) => {
-      if (!el) return '';
-      if ('value' in el && typeof el.value === 'string') return el.value;
-      return el.innerText || '';
-    };
-    const candidates = [];
-    const push = (t) => {
-      const v = (t || '').trim();
-      if (v.length > 16) candidates.push(v);
-    };
-    const selectors = [
-      '#payload',
-      '#collectedPayload',
-      '#collected-payload',
-      '[data-payload]',
-      '[id*="payload" i]',
-      'textarea[name*="payload" i]',
-      'pre#payload',
-      'code#payload',
-      '.payload',
-    ];
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      push(textOf(el));
-    }
-    for (const pre of document.querySelectorAll('pre')) {
-      push(textOf(pre));
-    }
-    for (const c of document.querySelectorAll('code')) {
-      push(textOf(c));
-    }
-    if (candidates.length === 0) return null;
-    return candidates.reduce((a, b) => (b.length > a.length ? b : a));
-  });
-}
+async function obtainKasmPayloadAndTx(page) {
+  const udip = page.locator('#udip');
+  const txIdInput = page.locator('#txId');
+  await udip.waitFor({ state: 'visible', timeout: 120000 });
+  await txIdInput.waitFor({ state: 'visible', timeout: 120000 });
 
-/**
- * @param {import('playwright').Page} page
- */
-async function waitForCopyButtonReady(page) {
-  const copyBtn = page.getByRole('button', { name: /copy\s*payload/i }).first();
-  await copyBtn.waitFor({ state: 'visible', timeout: 120000 });
-  await page.waitForFunction(
-    () => {
-      const buttons = Array.from(document.querySelectorAll('button'));
-      const btn = buttons.find((b) =>
-        /copy\s*payload/i.test((b.textContent || '').trim()),
-      );
-      return btn && !btn.disabled && btn.offsetParent !== null;
-    },
-    { timeout: 120000 },
-  );
-  return copyBtn;
-}
-
-/**
- * @param {import('playwright').Page} page
- * @param {import('playwright').Locator} copyBtn
- */
-async function readClipboardWithRetries(page, copyBtn) {
-  let best = '';
-  for (let i = 0; i < 10; i++) {
-    await copyBtn.click();
-    await page.waitForTimeout(450);
-    let clip = '';
-    try {
-      clip = (await page.evaluate(() => navigator.clipboard.readText())) || '';
-    } catch {
-      clip = '';
-    }
-    clip = clip.trim();
-    if (clip.length > best.length) best = clip;
-    if (looksLikePayload(clip)) return clip;
-    await page.waitForTimeout(500);
-  }
-  return best;
-}
-
-/**
- * Poll DOM for payload (WebKit: avoid clipboard — it often reads stale terminal / error text).
- * @param {import('playwright').Page} page
- */
-async function obtainPayloadFromDomOnly(page) {
-  const copyBtn = page.getByRole('button', { name: /copy\s*payload/i }).first();
-  for (let i = 0; i < 60; i++) {
+  const deadline = Date.now() + 120000;
+  let payload = '';
+  let txId = '';
+  while (Date.now() < deadline) {
+    payload = stripClipboardNoise((await udip.inputValue().catch(() => '')) || '');
+    txId = stripClipboardNoise((await txIdInput.inputValue().catch(() => '')) || '');
+    if (payload.length >= 16 || looksLikePayload(payload)) break;
+    if (payload.length >= 8 && txId.length > 0) break;
     await page.waitForTimeout(400);
-    let dom = await extractPayloadFromDom(page);
-    dom = stripClipboardNoise(dom || '');
-    if (dom && looksLikePayload(dom)) return dom.trim();
-    if (dom && dom.length >= 32) return dom.trim();
-    if (i % 5 === 0) await copyBtn.click().catch(() => {});
   }
-  const last = stripClipboardNoise((await extractPayloadFromDom(page)) || '');
-  return last.trim();
-}
 
-/**
- * @param {import('playwright').Page} page
- * @param {{ useClipboard?: boolean }} [opts]
- */
-async function obtainPayload(page, opts = {}) {
-  const useClipboard = opts.useClipboard !== false;
-
-  await waitForCopyButtonReady(page);
-  await page.waitForTimeout(1500);
-
-  let dom = await extractPayloadFromDom(page);
-  dom = stripClipboardNoise(dom || '');
-  if (dom && looksLikePayload(dom)) return dom.trim();
-
-  if (!useClipboard) {
-    const wk = await obtainPayloadFromDomOnly(page);
-    if (wk && wk.length >= 16) return wk;
+  if (!payload || payload.length < 8) {
     throw new Error(
-      `WebKit: could not read payload from DOM only. Open ${COLLECTOR_URL} and confirm payload appears on the page.`,
+      `Could not read payload from #udip. Open ${COLLECTOR_URL} and confirm inputs are populated.`,
     );
   }
-
-  const copyBtn = page.getByRole('button', { name: /copy\s*payload/i }).first();
-  let fromClip = await readClipboardWithRetries(page, copyBtn);
-  fromClip = stripClipboardNoise(fromClip);
-  if (fromClip && looksLikePayload(fromClip)) return fromClip.trim();
-
-  dom = stripClipboardNoise((await extractPayloadFromDom(page)) || '');
-  if (dom && dom.length >= 24) return dom.trim();
-  if (fromClip && fromClip.length >= 24) return fromClip.trim();
-
-  return stripClipboardNoise((fromClip || dom || '').trim());
-}
-
-/**
- * @param {import('playwright').BrowserContext} context
- * @param {import('playwright').Page} page
- */
-async function grantClipboard(context, origins) {
-  for (const origin of origins) {
-    try {
-      await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
-        origin,
-      });
-    } catch {
-      /* non-fatal */
-    }
-  }
+  return { payload: payload.trim(), txId: txId.trim() };
 }
 
 /**
@@ -356,14 +231,6 @@ async function appendToSharedText(page, block) {
  */
 async function runOneBrowser(browser, displayName) {
   const context = await browser.newContext();
-  // WebKit (Playwright) does not support clipboard-read/clipboard-write grants; granting can throw or break newPage().
-  if (browser.browserType().name() !== 'webkit') {
-    await grantClipboard(context, [COLLECTOR_ORIGIN, TEXT_ORIGIN]);
-  } else {
-    process.stderr.write(
-      'Note: WebKit — clipboard API permissions skipped; payload uses DOM / Copy + clipboard in-page only.\n',
-    );
-  }
 
   const page = await context.newPage();
   let version = '';
@@ -376,19 +243,15 @@ async function runOneBrowser(browser, displayName) {
   await page.goto(COLLECTOR_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
 
-  const useClipboard = browser.browserType().name() !== 'webkit';
-  const payload = await obtainPayload(page, { useClipboard });
-  if (!payload || payload.length < 16) {
-    throw new Error(
-      `Could not read payload (clipboard/DOM too short after Copy retries). Open ${COLLECTOR_URL} and confirm Copy Payload works manually. Payload length was ${payload ? payload.length : 0}.`,
-    );
-  }
-  process.stderr.write(`Payload captured (${payload.length} chars)\n`);
+  const { payload, txId } = await obtainKasmPayloadAndTx(page);
+  process.stderr.write(
+    `Payload captured (${payload.length} chars), txId: ${txId || '(empty)'}\n`,
+  );
 
   const ua =
     (await page.evaluate(() => navigator.userAgent).catch(() => '')) || '';
   const ts = new Date().toISOString();
-  const block = `\n--- BROWSER: ${String(displayName)} | engine: ${String(version || 'unknown')} | ${ts} ---\n${String(ua)}\n${String(payload)}\n`;
+  const block = `\n--- BROWSER: ${String(displayName)} | engine: ${String(version || 'unknown')} | ${ts} ---\ntxId: ${String(txId || '')}\n${String(ua)}\n\n${String(payload)}\n`;
 
   await appendToSharedText(page, block);
   await context.close();

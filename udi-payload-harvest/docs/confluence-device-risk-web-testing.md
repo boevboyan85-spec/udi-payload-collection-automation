@@ -7,7 +7,7 @@ _Use this page as the Confluence source: copy sections into your space or paste 
 | Field | Value |
 | ----- | ----- |
 | **Jira** | _(link: Test the effectiveness of device risk indicators for web events)_ |
-| **Collector (reference)** | https://gdtm-dev.globalsiteanalytics.com/index.html |
+| **Collector (reference)** | https://gdtm-dev.globalsiteanalytics.com/kasm.html (`#udip`, `#txId`) |
 | **Shared text (lab sync)** | https://gdtm-dev.globalsiteanalytics.com/text.html |
 | **Risk service / SDK** | _(version, environment, decrypt doc link)_ |
 | **Owner** | _(name)_ |
@@ -53,7 +53,7 @@ _Use this page as the Confluence source: copy sections into your space or paste 
 | --------- | ----- |
 | KASM image / OS | _(e.g. Ubuntu 22.04)_ |
 | Browsers under test | _(versions)_ |
-| Collector URL | https://gdtm-dev.globalsiteanalytics.com/index.html |
+| Collector URL | https://gdtm-dev.globalsiteanalytics.com/kasm.html |
 | Automation | `udi-payload-harvest` Playwright collector (see repo README) |
 
 ---

@@ -1,12 +1,11 @@
 import { test, expect } from '@playwright/test';
 
 // Template for CI/local smoke: remove skip and point to your collector URL.
-test.skip('collector page loads', async ({ page }) => {
+test.skip('kasm collector inputs visible', async ({ page }) => {
   const url =
     process.env.COLLECTOR_URL ||
-    'https://gdtm-dev.globalsiteanalytics.com/index.html';
+    'https://gdtm-dev.globalsiteanalytics.com/kasm.html';
   await page.goto(url);
-  await expect(
-    page.getByRole('button', { name: /copy\s*payload/i }),
-  ).toBeVisible({ timeout: 120000 });
+  await expect(page.locator('#udip')).toBeVisible({ timeout: 120000 });
+  await expect(page.locator('#txId')).toBeVisible({ timeout: 120000 });
 });

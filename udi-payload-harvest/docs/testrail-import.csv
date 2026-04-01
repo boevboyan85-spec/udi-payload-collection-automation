@@ -1,5 +1,5 @@
 Title,Section,Type,Priority,Preconditions,Steps,Expected Result,References
-UDI-001 Baseline — Chrome clean profile,Baseline,Functional,High,"KASM Ubuntu; Chrome default profile; no extensions","1. Open https://gdtm-dev.globalsiteanalytics.com/index.html
+UDI-001 Baseline — Chrome clean profile,Baseline,Functional,High,"KASM Ubuntu; Chrome default profile; no extensions","1. Open https://gdtm-dev.globalsiteanalytics.com/kasm.html
 2. Wait for Collected Payload and Copy Payload
 3. Capture payload (automation or manual)
 4. Repeat 5x same session / 5x fresh profile per test design","Payload non-empty; length stable within documented tolerance; Copy succeeds",Confluence scenario S-BASE-CHR-01
