@@ -47,7 +47,7 @@ Comma-separated list in **`UDIBROWSERS`** (default: `chrome,firefox,chromium`):
 | `brave` | `BRAVE_PATH` or `/usr/bin/brave-browser` |
 | `opera` | `OPERA_PATH` or `/usr/bin/opera` |
 | `firefox` | Playwright’s bundled Firefox unless **`FIREFOX_PATH`** is set (system Firefox) |
-| `tor` | **`TOR_BROWSER_PATH`** (e.g. `…/tor-browser/Browser/firefox`). Uses **`launchPersistentContext`** + on-disk **`user.js`** sandbox prefs under **`.playwright-tor-profile/`** (override with **`TOR_PLAYWRIGHT_PROFILE_DIR`**) so Tor can start in Kasm before Juggler attaches. |
+| `tor` | **`TOR_BROWSER_PATH`** → **`…/tor-browser/Browser/firefox`**. Uses **Selenium WebDriver + GeckoDriver** (Marionette), **not** Playwright — real Tor Browser does not include Playwright’s **Juggler** automation patch, so `firefox.launch` hangs after the UI opens. Install **`geckodriver`** (e.g. `apt install firefox-geckodriver` / `geckodriver`) or set **`GECKODRIVER_PATH`**. Selenium 4 may download a driver if none is found. |
 | `webkit` | Playwright WebKit (not Safari). Payload comes from **`#udip` / `#txId`** on the collector page (same as other browsers). |
 
 Example:
@@ -65,8 +65,8 @@ npm run collect
 | `COLLECTOR_URL` | `https://gdtm-dev.globalsiteanalytics.com/kasm.html` (reads **`#udip`** payload and **`#txId`**) |
 | `COLLECTOR_SETTLE_MS` | `2000` — extra wait after `kasm.html` loads so GDTM can fill `#udip` / `#txId` |
 | `PLAYWRIGHT_IGNORE_HTTPS_ERRORS` | Default **on** (`1` / unset). Playwright passes **`ignoreHTTPSErrors`** on the browser context so TLS still works when a corporate proxy re-signs HTTPS (Firefox often shows **`SEC_ERROR_UNKNOWN_ISSUER`** without this). Set to **`0`** or **`false`** to require a valid certificate chain. |
-| `PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX` | Default **on** (`1` / unset). Sets **`MOZ_DISABLE_CONTENT_SANDBOX`**, **`MOZ_DISABLE_GMP_SANDBOX`**, **`MOZ_DISABLE_RDD_SANDBOX`**, **`MOZ_DISABLE_SOCKET_PROCESS_SANDBOX`**, plus **`firefoxUserPrefs`** for **`security.sandbox.content.level`** — aimed at **`CanCreateUserNamespace() … EPERM`** in Docker/Kasm. Set **`0`** to keep Mozilla sandboxes. |
-| `TOR_PLAYWRIGHT_PROFILE_DIR` | Optional. Directory for Tor’s **persistent** Playwright profile (default **`.playwright-tor-profile/`** under the project). A **`user.js`** is written each run so sandbox prefs exist **before** startup. |
+| `PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX` | Default **on** (`1` / unset). Sets several **`MOZ_DISABLE_*`** env vars for **Playwright’s Firefox** only (bundled Juggler Firefox / **`FIREFOX_PATH`**). Set **`0`** to keep Mozilla sandboxes. **Tor** uses Selenium prefs instead. |
+| `GECKODRIVER_PATH` | Optional. Path to **`geckodriver`** for **Tor** (Selenium). If unset, common locations and Selenium Manager are tried. |
 
 ## Headless
 
@@ -160,9 +160,17 @@ This commits **`results/txids.jsonl`** and runs **`git push origin develop`**. F
 
 - Set `BRAVE_PATH`, `OPERA_PATH`, or `TOR_BROWSER_PATH` to the real binary. Tor is often under `tor-browser/Browser/firefox` or a distro wrapper script.
 
-**Firefox / Tor: `CanCreateUserNamespace() … EPERM` then immediate exit**
+**Firefox (Playwright): `CanCreateUserNamespace() … EPERM`**
 
-- Containers often block Linux user namespaces. The collector sets several **`MOZ_DISABLE_*`** env vars by default (**`PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX`**). **Tor** additionally uses a **persistent profile** with **`user.js`** (see **`.playwright-tor-profile/`**) because Playwright’s **`firefoxUserPrefs`** only apply after Juggler connects — too late if the process exits on sandbox init. **`TOR_BROWSER_PATH`** should be **`…/tor-browser/Browser/firefox`**.
+- Containers often block Linux user namespaces. **`PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX`** (default on) sets **`MOZ_DISABLE_*`** for Playwright’s Firefox launches.
+
+**Tor Browser opens but automation never navigates / stuck until you close the window**
+
+- **Tor is not Playwright-Juggler Firefox.** Playwright waits forever for the Juggler pipe; the window may still appear and connect to the Tor network. This project runs **Tor via Selenium + GeckoDriver** instead. Install **`geckodriver`**, set **`GECKODRIVER_PATH`** if needed, run **`npm install`**, and include **`tor`** in **`UDIBROWSERS`**.
+
+**`RenderCompositorSWGL` / framebuffer errors (Kasm)**
+
+- Tor’s Selenium path disables **WebRender** / GPU layers via Firefox **preferences** where possible. If graphics still fail, try **`HEADLESS=1`** for that run or fix the session’s **GL/VNC** setup.
 
 **403 / corporate proxy**
 

@@ -137,6 +137,12 @@ fi
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
+# Selenium / Tor: collector uses GeckoDriver + Marionette (Tor has no Playwright Juggler).
+echo "Installing GeckoDriver for Tor (Selenium)…"
+sudo apt-get install -y firefox-geckodriver 2>/dev/null || sudo apt-get install -y geckodriver 2>/dev/null || {
+  echo "Warning: no geckodriver APT package — install manually or rely on Selenium Manager; set GECKODRIVER_PATH if needed."
+}
+
 npm config set strict-ssl false
 npm install
 sudo npx playwright install-deps

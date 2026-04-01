@@ -10,7 +10,9 @@
  *   BRAVE_PATH        Executable for Brave (default: /usr/bin/brave-browser)
  *   OPERA_PATH        Executable for Opera (default: /usr/bin/opera)
  *   FIREFOX_PATH      Override Firefox binary
- *   TOR_BROWSER_PATH  Tor Browser binary (e.g. .../Browser/start-tor-browser or tor-browser)
+ *   TOR_BROWSER_PATH  Tor **`Browser/firefox`** binary (Gecko). Tor is driven via **Selenium + GeckoDriver**,
+ *                     not Playwright — stock Tor/Firefox does not ship Playwright’s Juggler patch (launch would hang).
+ *   GECKODRIVER_PATH  Optional path to **`geckodriver`** (else Selenium 4 may auto-download; or install `geckodriver` / `firefox-geckodriver`).
  *   COLLECTOR_SETTLE_MS  Extra wait after load so GDTM can inject #udip / #txId (default: 2000)
  *   RESULTS_FILE       Path to JSONL log (default: <project>/results/txids.jsonl)
  *   SKIP_RESULTS_FILE  Set to 1 to disable writing txId records
@@ -22,13 +24,12 @@
  *                                   often causes SEC_ERROR_UNKNOWN_ISSUER without this.
  *   PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX  Default on (unset or 1/true). Sets several MOZ_DISABLE_* env vars
  *                                   for Firefox / Tor Browser (Docker/Kasm user-namespace EPERM). Set 0/false off.
- *   TOR_PLAYWRIGHT_PROFILE_DIR  Optional absolute or project-relative path for Tor persistent profile (default:
- *                                   .playwright-tor-profile). A user.js is written here so sandbox prefs apply
- *                                   before Juggler connects (Tor often still needs this in addition to env).
  */
 
 import { spawnSync } from 'node:child_process';
 import { chromium, firefox, webkit } from 'playwright';
+import { Builder, By } from 'selenium-webdriver';
+import { Options, ServiceBuilder } from 'selenium-webdriver/firefox.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -92,54 +93,205 @@ function firefoxLaunchOptions(base) {
   };
 }
 
-function resolveTorPlaywrightProfileDir() {
-  const raw = process.env.TOR_PLAYWRIGHT_PROFILE_DIR;
-  if (!raw || !String(raw).trim()) {
-    return path.join(PROJECT_ROOT, '.playwright-tor-profile');
+function resolveGeckodriverPath() {
+  const raw = process.env.GECKODRIVER_PATH || process.env.GECKODRIVER || '';
+  if (raw && fs.existsSync(raw)) return raw;
+  for (const p of ['/usr/bin/geckodriver', '/usr/local/bin/geckodriver']) {
+    if (fs.existsSync(p)) return p;
   }
-  const s = String(raw).trim();
-  return path.isAbsolute(s) ? s : path.join(PROJECT_ROOT, s);
+  return '';
 }
 
-/**
- * Tor: Playwright only applies firefoxUserPrefs after Juggler connects — too late if the parent
- * process dies on sandbox init. Write user.js into a persistent profile so prefs load at startup.
- */
-function ensureTorPlaywrightProfileUserJs(profileDir) {
-  fs.mkdirSync(profileDir, { recursive: true });
-  const userJsPath = path.join(profileDir, 'user.js');
-  const body = [
-    '// udi-payload-harvest: relax sandboxes for Playwright + Tor in Kasm/Docker (user namespaces EPERM)',
-    'user_pref("security.sandbox.content.level", 0);',
-    'user_pref("security.sandbox.socket.process.level", 0);',
-    'user_pref("media.cubeb.sandbox", false);',
-    '',
-  ].join('\n');
-  fs.writeFileSync(userJsPath, body, 'utf8');
-}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Tor Browser via persistent context + disk user.js (see ensureTorPlaywrightProfileUserJs).
+ * Real Tor Browser is stock Mozilla Gecko without Playwright’s **Juggler** protocol — `firefox.launch`
+ * hangs waiting for the pipe. Use **Marionette** via Selenium + GeckoDriver instead.
  */
-async function launchTorPersistentContext() {
+async function buildTorWebDriver() {
   const exe = resolveExecutable('tor_browser', [
     '/usr/bin/tor-browser',
     '/usr/local/bin/tor-browser',
   ]);
-  const profileDir = resolveTorPlaywrightProfileDir();
-  ensureTorPlaywrightProfileUserJs(profileDir);
-  process.stderr.write(`Tor Playwright profile (user.js sandbox prefs): ${profileDir}\n`);
 
-  const baseOpts = {
-    headless: HEADLESS,
-    executablePath: exe,
-    args: ['--no-remote'],
-    ignoreHTTPSErrors: PLAYWRIGHT_IGNORE_HTTPS_ERRORS,
-  };
-  return firefox.launchPersistentContext(
-    profileDir,
-    firefoxLaunchOptions(baseOpts),
+  const options = new Options()
+    .setBinary(exe)
+    .setAcceptInsecureCerts(PLAYWRIGHT_IGNORE_HTTPS_ERRORS);
+
+  if (HEADLESS) {
+    options.addArguments('-headless');
+  }
+
+  options.setPreference('security.sandbox.content.level', 0);
+  options.setPreference('security.sandbox.socket.process.level', 0);
+  options.setPreference('gfx.webrender.enabled', false);
+  options.setPreference('layers.acceleration.disabled', true);
+  options.setPreference('media.cubeb.sandbox', false);
+
+  let builder = new Builder().forBrowser('firefox').setFirefoxOptions(options);
+
+  const gecko = resolveGeckodriverPath();
+  if (gecko) {
+    builder = builder.setFirefoxService(new ServiceBuilder(gecko));
+    process.stderr.write(`Tor: GeckoDriver ${gecko}\n`);
+  } else {
+    process.stderr.write(
+      'Tor: GeckoDriver not in PATH / GECKODRIVER_PATH — Selenium may download one on first run.\n',
+    );
+  }
+
+  process.stderr.write(
+    'Tor: Selenium WebDriver (Tor Browser has no Playwright Juggler; do not use firefox.launch).\n',
   );
+
+  return builder.build();
+}
+
+/**
+ * Find #udip / #txId on the main document or inside iframes (driver left in winning frame).
+ * @param {import('selenium-webdriver').WebDriver} driver
+ */
+async function findUdipTxElementsDriver(driver) {
+  async function tryInCurrentContext() {
+    const udips = await driver.findElements(By.css('#udip'));
+    const txs = await driver.findElements(By.css('#txId'));
+    if (udips.length && txs.length) {
+      return { udip: udips[0], txIdInput: txs[0] };
+    }
+    return null;
+  }
+
+  await driver.switchTo().defaultContent();
+  let hit = await tryInCurrentContext();
+  if (hit) return hit;
+
+  const frames = await driver.findElements(By.css('iframe'));
+  for (const frame of frames) {
+    await driver.switchTo().defaultContent();
+    try {
+      await driver.switchTo().frame(frame);
+    } catch {
+      continue;
+    }
+    hit = await tryInCurrentContext();
+    if (hit) return hit;
+  }
+
+  await driver.switchTo().defaultContent();
+  throw new Error('no #udip/#txId pair');
+}
+
+/**
+ * @param {import('selenium-webdriver').WebDriver} driver
+ */
+async function locateDriverInputsWithWait(driver) {
+  const deadline = Date.now() + 120000;
+  let lastLog = 0;
+  while (Date.now() < deadline) {
+    try {
+      return await findUdipTxElementsDriver(driver);
+    } catch {
+      /* keep scanning — snippet or frames may load late */
+    }
+    if (Date.now() - lastLog > 10000) {
+      lastLog = Date.now();
+      process.stderr.write('Still waiting for #udip / #txId in DOM…\n');
+    }
+    await sleep(400);
+  }
+  throw new Error(
+    `Could not locate #udip / #txId. Open ${COLLECTOR_URL} manually in Tor.`,
+  );
+}
+
+/**
+ * @param {import('selenium-webdriver').WebDriver} driver
+ */
+async function obtainKasmPayloadAndTxDriver(driver) {
+  const { udip, txIdInput } = await locateDriverInputsWithWait(driver);
+
+  const deadline = Date.now() + 120000;
+  let payload = '';
+  let txId = '';
+  let lastLog = 0;
+  while (Date.now() < deadline) {
+    payload = stripClipboardNoise((await udip.getAttribute('value')) || '');
+    txId = stripClipboardNoise((await txIdInput.getAttribute('value')) || '');
+    if (payload.length >= 16 || looksLikePayload(payload)) break;
+    if (payload.length >= 8 && txId.length > 0) break;
+    if (Date.now() - lastLog > 10000) {
+      lastLog = Date.now();
+      process.stderr.write(
+        'Still waiting for #udip / #txId values (snippet may still be loading)…\n',
+      );
+    }
+    await sleep(400);
+  }
+
+  if (!payload || payload.length < 8) {
+    throw new Error(
+      `Could not read payload from #udip. Open ${COLLECTOR_URL} and confirm inputs exist.`,
+    );
+  }
+  return { payload: payload.trim(), txId: txId.trim() };
+}
+
+/**
+ * GeckoDriver inherits **process.env** when spawning Firefox — needed for Kasm `clone() EPERM` sandboxes.
+ * @returns {() => void}
+ */
+function applyMozEnvForGeckoChild() {
+  if (!PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX) return () => {};
+  const backup = {};
+  for (const k of Object.keys(MOZ_SANDBOX_ENV_DISABLE)) {
+    backup[k] = process.env[k];
+  }
+  Object.assign(process.env, MOZ_SANDBOX_ENV_DISABLE);
+  return () => {
+    for (const k of Object.keys(MOZ_SANDBOX_ENV_DISABLE)) {
+      if (backup[k] === undefined) delete process.env[k];
+      else process.env[k] = backup[k];
+    }
+  };
+}
+
+/**
+ * @param {string} displayName
+ */
+async function runTorSelenium(displayName) {
+  const restoreEnv = applyMozEnvForGeckoChild();
+  try {
+    const driver = await buildTorWebDriver();
+    try {
+      await driver.manage().setTimeouts({ pageLoad: 120000, implicit: 0 });
+      await driver.get(COLLECTOR_URL);
+      await sleep(COLLECTOR_SETTLE_MS);
+
+      const { payload, txId } = await obtainKasmPayloadAndTxDriver(driver);
+      process.stderr.write(
+        `Payload captured (${payload.length} chars), txId: ${txId || '(empty)'}\n`,
+      );
+
+      let version = 'unknown';
+      try {
+        const ua = await driver.executeScript('return navigator.userAgent');
+        version = ua ? String(ua) : 'unknown';
+      } catch {
+        /* ignore */
+      }
+      const ts = new Date().toISOString();
+      currentRunTxRows.push({
+        txId: txId || '',
+        browserName: displayName,
+        browserVersion: version,
+        fetchedAt: ts,
+      });
+    } finally {
+      await driver.quit().catch(() => {});
+    }
+  } finally {
+    restoreEnv();
+  }
 }
 
 const DEFAULT_RESULTS_FILE = path.join(PROJECT_ROOT, 'results', 'txids.jsonl');
@@ -430,7 +582,7 @@ async function launchBrowser(kind) {
       );
     }
     case 'tor':
-      throw new Error('Tor is launched via launchTorPersistentContext() — not launchBrowser(tor)');
+      throw new Error('Tor uses runTorSelenium() — not launchBrowser(tor)');
     case 'webkit':
       return webkit.launch(opts);
     default:
@@ -461,28 +613,12 @@ async function main() {
     process.stderr.write(`\n>>> ${label} (${kind})\n`);
 
     if (kind === 'tor') {
-      /** @type {import('playwright').BrowserContext | null} */
-      let pctx = null;
       try {
-        pctx = await launchTorPersistentContext();
-      } catch (e) {
-        failures.push({ kind, phase: 'launch', error: e });
-        process.stderr.write(`Launch failed: ${e?.message || e}\n`);
-        continue;
-      }
-      try {
-        const page = pctx.pages()[0] ?? (await pctx.newPage());
-        const br = pctx.browser();
-        if (!br) {
-          throw new Error('Persistent Tor context has no Browser handle');
-        }
-        await runCollectorInPage(page, br, label);
+        await runTorSelenium(label);
         process.stderr.write(`OK: ${label}\n`);
       } catch (e) {
         failures.push({ kind, phase: 'run', error: e });
-        process.stderr.write(`Run failed: ${e?.message || e}\n`);
-      } finally {
-        await pctx.close().catch(() => {});
+        process.stderr.write(`Tor (Selenium) failed: ${e?.message || e}\n`);
       }
       continue;
     }
