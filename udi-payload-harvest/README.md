@@ -114,21 +114,22 @@ Each successful browser run appends one line:
 
 **Automatic (default):** after every `npm run collect`, if **`results/txids.jsonl`** exists and you are inside a **git** clone with **`origin`** and credentials, the script commits changes and pushes **`develop`**. Use **`AUTO_PUSH_RESULTS=0`** to skip.
 
-**Git author on KASM (required for `git commit`):** either configure once:
+**Git author on KASM (required for `git commit`):** **Option C (recommended)** — set a **global** identity once:
 
 ```bash
 git config --global user.email "you@example.com"
 git config --global user.name "Your Name"
 ```
 
-…or set these **only for the session** (used by auto-push; no global config):
+Or the same via helper (keeps secrets out of shell history if you prefer env vars):
 
 ```bash
-export GIT_AUTHOR_NAME="Your Name"
-export GIT_AUTHOR_EMAIL="you@example.com"
+export GIT_USER_EMAIL="you@example.com"
+export GIT_USER_NAME="Your Name"
+bash scripts/git-config-global.sh
 ```
 
-Add the exports to `~/.bashrc` on the workspace if you want them every login.
+**Alternative:** session-only exports (no global config) — `GIT_AUTHOR_NAME` and `GIT_AUTHOR_EMAIL` — see earlier in this file; you can add them to `~/.bashrc` if needed.
 
 **Manual:** from the **`udi-payload-harvest`** folder:
 
