@@ -15,8 +15,8 @@
  *                     **`firefox-bin`**. If unset, auto-detect under **`~/tor-browser/Browser`** and torbrowser-launcher’s
  *                     **`tbb/.../Browser`**. Avoid **`/usr/bin/tor-browser`** when it is a distro script.
  *   GECKODRIVER_PATH  Optional path to **`geckodriver`** (else Selenium 4 may auto-download; or install `geckodriver` / `firefox-geckodriver`).
- *   TOR_WARMUP_MS     Default 15000 — sleep after WebDriver session before `driver.get` (Tor bootstrap).
- *   TOR_SETTLE_AFTER_LOAD_MS  Default COLLECTOR_SETTLE_MS — sleep after navigation before polling #udip.
+ *   TOR_WARMUP_MS     Default 20000 — sleep after WebDriver session before `driver.get` (Tor bootstrap).
+ *   TOR_SETTLE_AFTER_LOAD_MS  Default 4000 — sleep after Tor navigation before polling #udip (Playwright uses COLLECTOR_SETTLE_MS).
  *   TOR_SELENIUM_KEEP_OPEN    Set 1 to skip driver.quit() so the window stays up for debugging.
  *   TOR_SELENIUM_PROFILE_DIR  Override path for the **persistent** Marionette profile (default: ~/.udi-tor-selenium-profile).
  *                             With TOR_SELENIUM_EPHEMERAL_PROFILE=1, each run uses a fresh profile and Tor’s
@@ -69,12 +69,9 @@ function intEnv(name, defaultValue) {
 }
 
 /** Wait after Marionette session starts before loading HTTPS (Tor must connect to the Tor network first). */
-const TOR_WARMUP_MS = intEnv('TOR_WARMUP_MS', 15000);
-/** Extra wait after `driver.get` for GDTM / Tor circuits (defaults to COLLECTOR_SETTLE_MS). */
-const TOR_SETTLE_AFTER_LOAD_MS = intEnv(
-  'TOR_SETTLE_AFTER_LOAD_MS',
-  COLLECTOR_SETTLE_MS,
-);
+const TOR_WARMUP_MS = intEnv('TOR_WARMUP_MS', 20000);
+/** Extra wait after `driver.get` for GDTM / Tor circuits (Tor-only; Playwright uses COLLECTOR_SETTLE_MS). */
+const TOR_SETTLE_AFTER_LOAD_MS = intEnv('TOR_SETTLE_AFTER_LOAD_MS', 4000);
 
 const PLAYWRIGHT_IGNORE_HTTPS_ERRORS = (() => {
   const v = process.env.PLAYWRIGHT_IGNORE_HTTPS_ERRORS;

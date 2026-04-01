@@ -11,7 +11,8 @@
 # PLAYWRIGHT_IGNORE_HTTPS_ERRORS=1 (default below): Playwright Firefox ignores TLS chain errors
 # (e.g. SEC_ERROR_UNKNOWN_ISSUER with corporate TLS inspection). Set 0 to enforce strict TLS.
 # PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX=1 (default): MOZ_DISABLE_CONTENT_SANDBOX for Firefox/Tor in Kasm (EPERM).
-# TOR_WARMUP_MS=10000 (default below): ms to wait after Marionette before navigation (collect.mjs); override if needed.
+# TOR_WARMUP_MS=20000 (default below): ms after Marionette before driver.get (collect.mjs Tor).
+# TOR_SETTLE_AFTER_LOAD_MS=4000 (default below): ms after Tor navigation before polling #udip.
 # BRAVE_PATH / TOR_BROWSER_PATH: exported when brave exists or ~/tor-browser has Browser/firefox-bin (Gecko; not the firefox wrapper script).
 # UDIBROWSERS default: chrome,chromium,firefox,brave,tor (matches collect.mjs / run-kasm.sh).
 #
@@ -43,8 +44,10 @@ PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX="${PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX
 export PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX
 
 # Tor + Selenium: wait after Marionette before driver.get (milliseconds; 10000 ≈ 10s).
-TOR_WARMUP_MS="${TOR_WARMUP_MS:-10000}"
+TOR_WARMUP_MS="${TOR_WARMUP_MS:-20000}"
 export TOR_WARMUP_MS
+TOR_SETTLE_AFTER_LOAD_MS="${TOR_SETTLE_AFTER_LOAD_MS:-4000}"
+export TOR_SETTLE_AFTER_LOAD_MS
 
 UDIBROWSERS="${UDIBROWSERS:-chrome,chromium,firefox,brave,tor}"
 export UDIBROWSERS
@@ -242,6 +245,7 @@ fi
 echo "Done. Harvest project directory: $(pwd)"
 echo "Add to ~/.bashrc (or export in your session) to persist for npm run collect:"
 echo "  export UDIBROWSERS=${UDIBROWSERS}  # default matches collect.mjs"
-echo "  export TOR_WARMUP_MS=${TOR_WARMUP_MS}  # ms after Marionette before navigation (~10s)"
+echo "  export TOR_WARMUP_MS=${TOR_WARMUP_MS}  # ms after Marionette before navigation (default ~20s)"
+echo "  export TOR_SETTLE_AFTER_LOAD_MS=${TOR_SETTLE_AFTER_LOAD_MS}  # ms after Tor page load before polling #udip"
 [[ -n "${BRAVE_PATH:-}" ]] && echo "  export BRAVE_PATH=\"$BRAVE_PATH\""
 [[ -n "${TOR_BROWSER_PATH:-}" ]] && echo "  export TOR_BROWSER_PATH=\"$TOR_BROWSER_PATH\"  # Selenium + Tor Browser"

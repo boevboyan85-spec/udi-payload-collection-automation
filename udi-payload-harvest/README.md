@@ -67,8 +67,8 @@ npm run collect
 | `PLAYWRIGHT_IGNORE_HTTPS_ERRORS` | Default **on** (`1` / unset). Playwright passes **`ignoreHTTPSErrors`** on the browser context so TLS still works when a corporate proxy re-signs HTTPS (Firefox often shows **`SEC_ERROR_UNKNOWN_ISSUER`** without this). Set to **`0`** or **`false`** to require a valid certificate chain. |
 | `PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX` | Default **on** (`1` / unset). Sets several **`MOZ_DISABLE_*`** env vars for **Playwright’s Firefox** only (bundled Juggler Firefox / **`FIREFOX_PATH`**). Set **`0`** to keep Mozilla sandboxes. **Tor** uses Selenium prefs instead. |
 | `GECKODRIVER_PATH` | Optional. Path to **`geckodriver`** for **Tor** (Selenium). If unset, common locations and Selenium Manager are tried. |
-| `TOR_WARMUP_MS` | Default **`15000`**. After Marionette connects, wait this long **before** `driver.get` so Tor can finish connecting to the Tor network. Increase if the window loads the URL then misbehaves. **`0`** is allowed. |
-| `TOR_SETTLE_AFTER_LOAD_MS` | Default **`COLLECTOR_SETTLE_MS`**. Sleep after navigation before polling **`#udip`**. |
+| `TOR_WARMUP_MS` | Default **`20000`**. After Marionette connects, wait this long **before** `driver.get` so Tor can finish connecting to the Tor network. Increase if the window loads the URL then misbehaves. **`0`** is allowed. |
+| `TOR_SETTLE_AFTER_LOAD_MS` | Default **`4000`** (Tor + Selenium only). Sleep after **`driver.get`** before polling **`#udip`**. Playwright browsers use **`COLLECTOR_SETTLE_MS`** after load instead. |
 | `TOR_SELENIUM_KEEP_OPEN` | Set **`1`** to **not** call **`driver.quit()`** so Tor stays open for debugging (you close it yourself). |
 | `TOR_SELENIUM_PROFILE_DIR` | **Persistent** Firefox profile directory for Tor + Selenium (default: **`~/.udi-tor-selenium-profile`**). Reusing one directory lets Tor remember **Always connect** and other launcher state. |
 | `TOR_SELENIUM_EPHEMERAL_PROFILE` | Set **`1`** / **`true`** to **not** pass **`-profile`** — each run gets a new anonymous profile (connect dialog every time; legacy behavior). |
