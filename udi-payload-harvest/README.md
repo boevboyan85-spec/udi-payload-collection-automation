@@ -62,6 +62,9 @@ npm run collect
 | -------- | ------- |
 | `COLLECTOR_URL` | `https://gdtm-dev.globalsiteanalytics.com/index.html` |
 | `TEXT_SYNC_URL` | `https://gdtm-dev.globalsiteanalytics.com/text.html` |
+| `TEXT_SYNC_DRAIN_MS` | `3000` — wait after each append so WebSocket sync can flush before the browser closes |
+| `TEXT_SYNC_STABLE_MS` | `400` — poll interval while waiting for `#text` to finish loading from sync |
+| `TEXT_SYNC_STABLE_TICKS` | `4` — how many unchanged polls count as “stable” |
 
 ## Headless
 

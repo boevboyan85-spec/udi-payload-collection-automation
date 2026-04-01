@@ -12,6 +12,9 @@
  *   OPERA_PATH        Executable for Opera (default: /usr/bin/opera)
  *   FIREFOX_PATH      Override Firefox binary
  *   TOR_BROWSER_PATH  Tor Browser binary (e.g. .../Browser/start-tor-browser or tor-browser)
+ *   TEXT_SYNC_DRAIN_MS  Wait after appending so WebSocket can flush before browser closes (default: 3000)
+ *   TEXT_SYNC_STABLE_MS Poll interval while waiting for textarea to finish loading (default: 400)
+ *   TEXT_SYNC_STABLE_TICKS Value unchanged this many polls => stable (default: 4)
  */
 
 import { chromium, firefox, webkit } from 'playwright';
@@ -30,6 +33,10 @@ const HEADLESS =
 
 const COLLECTOR_ORIGIN = new URL(COLLECTOR_URL).origin;
 const TEXT_ORIGIN = new URL(TEXT_SYNC_URL).origin;
+
+const TEXT_SYNC_DRAIN_MS = Number(process.env.TEXT_SYNC_DRAIN_MS || 3000);
+const TEXT_SYNC_STABLE_MS = Number(process.env.TEXT_SYNC_STABLE_MS || 400);
+const TEXT_SYNC_STABLE_TICKS = Number(process.env.TEXT_SYNC_STABLE_TICKS || 4);
 
 const DEFAULT_BROWSERS = ['chrome', 'firefox', 'chromium'];
 
@@ -183,6 +190,30 @@ async function grantClipboard(context, origins) {
 }
 
 /**
+ * Wait until textarea#text stops changing (WebSocket / React often fills it after load).
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').Locator} textarea
+ */
+async function waitForStableTextareaValue(page, textarea) {
+  const maxWaitMs = 25000;
+  const start = Date.now();
+  let prev = await textarea.inputValue().catch(() => '');
+  let stableCount = 0;
+  while (Date.now() - start < maxWaitMs) {
+    await page.waitForTimeout(TEXT_SYNC_STABLE_MS);
+    const cur = await textarea.inputValue().catch(() => '');
+    if (cur === prev) {
+      stableCount += 1;
+      if (stableCount >= TEXT_SYNC_STABLE_TICKS) return cur;
+    } else {
+      stableCount = 0;
+      prev = cur;
+    }
+  }
+  return await textarea.inputValue().catch(() => '');
+}
+
+/**
  * @param {import('playwright').Page} page
  * @param {string} block
  */
@@ -195,31 +226,41 @@ async function appendToSharedText(page, block) {
 
   if (hasTextarea) {
     await textarea.waitFor({ state: 'visible', timeout: 30000 });
+    const existing = await waitForStableTextareaValue(page, textarea);
+    const next = existing + block;
     await textarea.click();
-    // React / controlled inputs: plain el.value += does not update state or WebSocket sync.
-    await textarea.evaluate((el, append) => {
-      const proto = window.HTMLTextAreaElement.prototype;
-      const desc = Object.getOwnPropertyDescriptor(proto, 'value');
-      const next = (el.value || '') + append;
-      if (desc?.set) {
-        desc.set.call(el, next);
-      } else {
-        el.value = next;
-      }
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-      try {
-        const opts =
-          append.length <= 8000
-            ? { bubbles: true, inputType: 'insertFromPaste', data: append }
-            : { bubbles: true, inputType: 'insertFromPaste' };
-        el.dispatchEvent(new InputEvent('input', opts));
-      } catch {
-        /* InputEvent unsupported in very old engines */
-      }
-    }, block);
+    await textarea.evaluate(
+      ({ fullValue, appendedBlock }) => {
+        const el = document.getElementById('text');
+        if (!el || !('value' in el)) return;
+        const proto = window.HTMLTextAreaElement.prototype;
+        const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (desc?.set) {
+          desc.set.call(el, fullValue);
+        } else {
+          el.value = fullValue;
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        try {
+          const opts =
+            appendedBlock.length <= 8000
+              ? {
+                  bubbles: true,
+                  inputType: 'insertFromPaste',
+                  data: appendedBlock,
+                }
+              : { bubbles: true, inputType: 'insertFromPaste' };
+          el.dispatchEvent(new InputEvent('input', opts));
+        } catch {
+          /* InputEvent unsupported */
+        }
+      },
+      { fullValue: next, appendedBlock: block },
+    );
     await textarea.blur();
-    await page.waitForTimeout(400);
+    // Let the doc sync out before the next browser navigates away or context closes.
+    await page.waitForTimeout(TEXT_SYNC_DRAIN_MS);
     return;
   }
 
