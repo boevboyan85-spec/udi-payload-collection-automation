@@ -67,6 +67,9 @@ npm run collect
 | `PLAYWRIGHT_IGNORE_HTTPS_ERRORS` | Default **on** (`1` / unset). Playwright passes **`ignoreHTTPSErrors`** on the browser context so TLS still works when a corporate proxy re-signs HTTPS (Firefox often shows **`SEC_ERROR_UNKNOWN_ISSUER`** without this). Set to **`0`** or **`false`** to require a valid certificate chain. |
 | `PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX` | Default **on** (`1` / unset). Sets several **`MOZ_DISABLE_*`** env vars for **Playwright’s Firefox** only (bundled Juggler Firefox / **`FIREFOX_PATH`**). Set **`0`** to keep Mozilla sandboxes. **Tor** uses Selenium prefs instead. |
 | `GECKODRIVER_PATH` | Optional. Path to **`geckodriver`** for **Tor** (Selenium). If unset, common locations and Selenium Manager are tried. |
+| `TOR_WARMUP_MS` | Default **`15000`**. After Marionette connects, wait this long **before** `driver.get` so Tor can finish connecting to the Tor network. Increase if the window loads the URL then misbehaves. **`0`** is allowed. |
+| `TOR_SETTLE_AFTER_LOAD_MS` | Default **`COLLECTOR_SETTLE_MS`**. Sleep after navigation before polling **`#udip`**. |
+| `TOR_SELENIUM_KEEP_OPEN` | Set **`1`** to **not** call **`driver.quit()`** so Tor stays open for debugging (you close it yourself). |
 
 ## Headless
 
@@ -166,7 +169,11 @@ This commits **`results/txids.jsonl`** and runs **`git push origin develop`**. F
 
 **Tor Browser opens but automation never navigates / stuck until you close the window**
 
-- **Tor is not Playwright-Juggler Firefox.** Playwright waits forever for the Juggler pipe; the window may still appear and connect to the Tor network. This project runs **Tor via Selenium + GeckoDriver** instead. Install **`geckodriver`**, set **`GECKODRIVER_PATH`** if needed, run **`npm install`**, and include **`tor`** in **`UDIBROWSERS`**.
+- **Tor is not Playwright-Juggler Firefox.** This project uses **Selenium + GeckoDriver**. Install **`geckodriver`**, run **`npm install`**, include **`tor`** in **`UDIBROWSERS`**.
+
+**Tor opens the URL then the window closes with little or no terminal output**
+
+- The script logs **`[tor] …`** steps to stderr. If it closes right after load, Tor may still be **bootstrapping** when HTTPS runs — increase **`TOR_WARMUP_MS`** (e.g. **`30000`**). Polling now **re-finds** **`#udip`** each loop so **stale WebElement** errors from GDTM reloads do not abort silently. Use **`TOR_SELENIUM_KEEP_OPEN=1`** to skip **`driver.quit()`** and inspect the tab. **`[tor] driver.quit failed:`** can appear if Tor already exited on its own.
 
 **`RenderCompositorSWGL` / framebuffer errors (Kasm)**
 

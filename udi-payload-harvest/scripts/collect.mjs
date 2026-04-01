@@ -13,6 +13,9 @@
  *   TOR_BROWSER_PATH  Tor **`Browser/firefox`** binary (Gecko). Tor is driven via **Selenium + GeckoDriver**,
  *                     not Playwright — stock Tor/Firefox does not ship Playwright’s Juggler patch (launch would hang).
  *   GECKODRIVER_PATH  Optional path to **`geckodriver`** (else Selenium 4 may auto-download; or install `geckodriver` / `firefox-geckodriver`).
+ *   TOR_WARMUP_MS     Default 15000 — sleep after WebDriver session before `driver.get` (Tor bootstrap).
+ *   TOR_SETTLE_AFTER_LOAD_MS  Default COLLECTOR_SETTLE_MS — sleep after navigation before polling #udip.
+ *   TOR_SELENIUM_KEEP_OPEN    Set 1 to skip driver.quit() so the window stays up for debugging.
  *   COLLECTOR_SETTLE_MS  Extra wait after load so GDTM can inject #udip / #txId (default: 2000)
  *   RESULTS_FILE       Path to JSONL log (default: <project>/results/txids.jsonl)
  *   SKIP_RESULTS_FILE  Set to 1 to disable writing txId records
@@ -47,6 +50,21 @@ const HEADLESS =
   process.env.HEADLESS === '1' || process.env.HEADLESS === 'true';
 
 const COLLECTOR_SETTLE_MS = Number(process.env.COLLECTOR_SETTLE_MS || 2000);
+
+function intEnv(name, defaultValue) {
+  const v = process.env[name];
+  if (v === undefined || v === '') return defaultValue;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : defaultValue;
+}
+
+/** Wait after Marionette session starts before loading HTTPS (Tor must connect to the Tor network first). */
+const TOR_WARMUP_MS = intEnv('TOR_WARMUP_MS', 15000);
+/** Extra wait after `driver.get` for GDTM / Tor circuits (defaults to COLLECTOR_SETTLE_MS). */
+const TOR_SETTLE_AFTER_LOAD_MS = intEnv(
+  'TOR_SETTLE_AFTER_LOAD_MS',
+  COLLECTOR_SETTLE_MS,
+);
 
 const PLAYWRIGHT_IGNORE_HTTPS_ERRORS = (() => {
   const v = process.env.PLAYWRIGHT_IGNORE_HTTPS_ERRORS;
@@ -182,58 +200,38 @@ async function findUdipTxElementsDriver(driver) {
 }
 
 /**
+ * Poll for #udip / #txId. Re-finds elements every iteration — Tor/GDTM can replace the DOM and
+ * stale WebElement references would throw and (with a bare catch upstream) look like “browser just closed”.
  * @param {import('selenium-webdriver').WebDriver} driver
  */
-async function locateDriverInputsWithWait(driver) {
+async function obtainKasmPayloadAndTxDriver(driver) {
   const deadline = Date.now() + 120000;
   let lastLog = 0;
   while (Date.now() < deadline) {
     try {
-      return await findUdipTxElementsDriver(driver);
+      const { udip, txIdInput } = await findUdipTxElementsDriver(driver);
+      const payload = stripClipboardNoise((await udip.getAttribute('value')) || '');
+      const txId = stripClipboardNoise((await txIdInput.getAttribute('value')) || '');
+      if (payload.length >= 16 || looksLikePayload(payload)) {
+        return { payload: payload.trim(), txId: txId.trim() };
+      }
+      if (payload.length >= 8 && txId.length > 0) {
+        return { payload: payload.trim(), txId: txId.trim() };
+      }
     } catch {
-      /* keep scanning — snippet or frames may load late */
+      /* DOM not ready, stale element, or wrong frame */
     }
-    if (Date.now() - lastLog > 10000) {
-      lastLog = Date.now();
-      process.stderr.write('Still waiting for #udip / #txId in DOM…\n');
-    }
-    await sleep(400);
-  }
-  throw new Error(
-    `Could not locate #udip / #txId. Open ${COLLECTOR_URL} manually in Tor.`,
-  );
-}
-
-/**
- * @param {import('selenium-webdriver').WebDriver} driver
- */
-async function obtainKasmPayloadAndTxDriver(driver) {
-  const { udip, txIdInput } = await locateDriverInputsWithWait(driver);
-
-  const deadline = Date.now() + 120000;
-  let payload = '';
-  let txId = '';
-  let lastLog = 0;
-  while (Date.now() < deadline) {
-    payload = stripClipboardNoise((await udip.getAttribute('value')) || '');
-    txId = stripClipboardNoise((await txIdInput.getAttribute('value')) || '');
-    if (payload.length >= 16 || looksLikePayload(payload)) break;
-    if (payload.length >= 8 && txId.length > 0) break;
     if (Date.now() - lastLog > 10000) {
       lastLog = Date.now();
       process.stderr.write(
-        'Still waiting for #udip / #txId values (snippet may still be loading)…\n',
+        '[tor] Still waiting for #udip / #txId (Tor circuit + snippet can be slow)…\n',
       );
     }
     await sleep(400);
   }
-
-  if (!payload || payload.length < 8) {
-    throw new Error(
-      `Could not read payload from #udip. Open ${COLLECTOR_URL} and confirm inputs exist.`,
-    );
-  }
-  return { payload: payload.trim(), txId: txId.trim() };
+  throw new Error(
+    `Could not read #udip in time. Try larger TOR_WARMUP_MS / TOR_SETTLE_AFTER_LOAD_MS, or open ${COLLECTOR_URL} manually in Tor.`,
+  );
 }
 
 /**
@@ -261,12 +259,34 @@ function applyMozEnvForGeckoChild() {
 async function runTorSelenium(displayName) {
   const restoreEnv = applyMozEnvForGeckoChild();
   try {
+    process.stderr.write('[tor] Starting GeckoDriver / Tor Browser session…\n');
     const driver = await buildTorWebDriver();
     try {
-      await driver.manage().setTimeouts({ pageLoad: 120000, implicit: 0 });
-      await driver.get(COLLECTOR_URL);
-      await sleep(COLLECTOR_SETTLE_MS);
+      await driver.manage().setTimeouts({
+        pageLoad: 180000,
+        script: 120000,
+        implicit: 0,
+      });
 
+      process.stderr.write(
+        `[tor] Waiting ${TOR_WARMUP_MS}ms for Tor to finish bootstrapping (TOR_WARMUP_MS)…\n`,
+      );
+      await sleep(TOR_WARMUP_MS);
+
+      process.stderr.write(`[tor] Navigating to ${COLLECTOR_URL}…\n`);
+      try {
+        await driver.get(COLLECTOR_URL);
+      } catch (e) {
+        process.stderr.write(`[tor] Navigation error: ${e?.message || e}\n`);
+        throw e;
+      }
+
+      process.stderr.write(
+        `[tor] Waiting ${TOR_SETTLE_AFTER_LOAD_MS}ms after load (TOR_SETTLE_AFTER_LOAD_MS)…\n`,
+      );
+      await sleep(TOR_SETTLE_AFTER_LOAD_MS);
+
+      process.stderr.write('[tor] Polling for collector fields…\n');
       const { payload, txId } = await obtainKasmPayloadAndTxDriver(driver);
       process.stderr.write(
         `Payload captured (${payload.length} chars), txId: ${txId || '(empty)'}\n`,
@@ -287,7 +307,19 @@ async function runTorSelenium(displayName) {
         fetchedAt: ts,
       });
     } finally {
-      await driver.quit().catch(() => {});
+      const keep =
+        process.env.TOR_SELENIUM_KEEP_OPEN === '1' ||
+        process.env.TOR_SELENIUM_KEEP_OPEN === 'true';
+      if (keep) {
+        process.stderr.write(
+          '[tor] TOR_SELENIUM_KEEP_OPEN=1 — leaving browser open (quit manually).\n',
+        );
+      } else {
+        process.stderr.write('[tor] Closing WebDriver session…\n');
+        await driver.quit().catch((e) => {
+          process.stderr.write(`[tor] driver.quit failed: ${e?.message || e}\n`);
+        });
+      }
     }
   } finally {
     restoreEnv();
