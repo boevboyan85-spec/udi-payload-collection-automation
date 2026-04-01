@@ -55,7 +55,7 @@ npm install
 sudo npx playwright install-deps
 
 export NODE_TLS_REJECT_UNAUTHORIZED=0
-npx playwright install chromium webkit
+npx playwright install chromium firefox webkit
 unset NODE_TLS_REJECT_UNAUTHORIZED
 
 echo "Done. Harvest project directory: $(pwd)"
