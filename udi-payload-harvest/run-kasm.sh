@@ -30,8 +30,16 @@ export PLAYWRIGHT_IGNORE_HTTPS_ERRORS
 # Firefox/Tor: user-namespace sandbox EPERM in Docker/Kasm — Mozilla env disables content sandbox.
 : "${PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX:=1}"
 export PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX
-if [[ -z "${TOR_BROWSER_PATH:-}" && -x "${HOME}/tor-browser/Browser/firefox" ]]; then
-  export TOR_BROWSER_PATH="${HOME}/tor-browser/Browser/firefox"
+if [[ -z "${TOR_BROWSER_PATH:-}" ]]; then
+  _tb_b="${HOME}/tor-browser/Browser"
+  if [[ -x "${_tb_b}/firefox-bin" ]]; then
+    export TOR_BROWSER_PATH="${_tb_b}/firefox-bin"
+  elif [[ -x "${_tb_b}/firefox" ]]; then
+    _h=$(head -c2 "${_tb_b}/firefox" 2>/dev/null || printf '')
+    if [[ "${_h}" != '#!' ]]; then
+      export TOR_BROWSER_PATH="${_tb_b}/firefox"
+    fi
+  fi
 fi
 echo "UDIBROWSERS=$UDIBROWSERS"
 echo "Running collector (headed unless HEADLESS=1)..."

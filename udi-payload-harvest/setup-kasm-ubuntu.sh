@@ -12,7 +12,7 @@
 # (e.g. SEC_ERROR_UNKNOWN_ISSUER with corporate TLS inspection). Set 0 to enforce strict TLS.
 # PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX=1 (default): MOZ_DISABLE_CONTENT_SANDBOX for Firefox/Tor in Kasm (EPERM).
 # TOR_WARMUP_MS=10000 (default below): ms to wait after Marionette before navigation (collect.mjs); override if needed.
-# BRAVE_PATH / TOR_BROWSER_PATH: exported when /usr/bin/brave-browser or ~/tor-browser/Browser/firefox exists.
+# BRAVE_PATH / TOR_BROWSER_PATH: exported when brave exists or ~/tor-browser has Browser/firefox-bin (Gecko; not the firefox wrapper script).
 # UDIBROWSERS default: chrome,chromium,firefox,brave,tor (matches collect.mjs / run-kasm.sh).
 #
 # Installs Brave from the official APT repo (for UDIBROWSERS=brave). Set SKIP_BRAVE_APT=1 to skip.
@@ -84,14 +84,26 @@ else
   echo "Skipping Brave APT install (SKIP_BRAVE_APT=1)."
 fi
 
+# Selenium/GeckoDriver needs the real ELF (firefox-bin). Browser/firefox is often a #! wrapper script.
+tor_browser_gecko_exe() {
+  local tb_home="$1"
+  local b="${tb_home}/Browser"
+  if [[ -x "$b/firefox-bin" ]]; then echo "$b/firefox-bin"; return 0; fi
+  if [[ -x "$b/firefox" ]]; then
+    local h
+    h=$(head -c2 "$b/firefox" 2>/dev/null || printf '')
+    if [[ "$h" != '#!' ]]; then echo "$b/firefox"; return 0; fi
+  fi
+  return 1
+}
+
 if [[ "${SKIP_TOR_BROWSER:-}" != "1" ]]; then
   TB_VER="${TOR_BROWSER_VERSION:-15.0.8}"
   TB_HOME="${TOR_BROWSER_HOME:-$HOME/tor-browser}"
-  TB_FIREFOX="${TB_HOME}/Browser/firefox"
   DPKG_ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
 
   if [[ "$DPKG_ARCH" == "amd64" ]]; then
-    if [[ -x "$TB_FIREFOX" ]]; then
+    if TB_GECKO=$(tor_browser_gecko_exe "$TB_HOME"); then
       echo "Tor Browser already present at $TB_HOME (skip download)."
     else
       echo "Installing Tor Browser ${TB_VER} (official tarball, x86_64)..."
@@ -126,17 +138,17 @@ if [[ "${SKIP_TOR_BROWSER:-}" != "1" ]]; then
         tar -xJf "$TMP_TB/$TB_FILE" -C "$PARENT"
         rm -rf "$TMP_TB"
         trap - EXIT
-        if [[ ! -x "$TB_FIREFOX" ]]; then
-          echo "Warning: expected $TB_FIREFOX missing after extract; check TOR_BROWSER_VERSION / tarball layout."
+        if ! TB_GECKO=$(tor_browser_gecko_exe "$TB_HOME"); then
+          echo "Warning: no Gecko binary (Browser/firefox-bin or non-script Browser/firefox) under $TB_HOME after extract; check TOR_BROWSER_VERSION / tarball layout."
         fi
       fi
     fi
-    if [[ -x "$TB_FIREFOX" ]]; then
-      export TOR_BROWSER_PATH="$TB_FIREFOX"
+    if TB_GECKO=$(tor_browser_gecko_exe "$TB_HOME"); then
+      export TOR_BROWSER_PATH="$TB_GECKO"
     fi
   else
     echo "Tor Browser: no official Linux ${DPKG_ARCH} tarball in this script; installing torbrowser-launcher."
-    echo "Run it once from the desktop to download Tor, then set TOR_BROWSER_PATH to .../Browser/firefox under ~/.local/share/torbrowser"
+    echo "Run it once from the desktop to download Tor, then set TOR_BROWSER_PATH to .../Browser/firefox-bin (or unset — collect.mjs auto-detects under ~/.local/share/torbrowser/tbb)"
     sudo apt-get install -y torbrowser-launcher || true
   fi
 else
@@ -148,9 +160,8 @@ if [[ -z "${BRAVE_PATH:-}" ]] && [[ -x /usr/bin/brave-browser ]]; then
   export BRAVE_PATH="/usr/bin/brave-browser"
 fi
 if [[ -z "${TOR_BROWSER_PATH:-}" ]]; then
-  _tb_firefox="${HOME}/tor-browser/Browser/firefox"
-  if [[ -x "$_tb_firefox" ]]; then
-    export TOR_BROWSER_PATH="$_tb_firefox"
+  if _tb_gecko=$(tor_browser_gecko_exe "$HOME/tor-browser"); then
+    export TOR_BROWSER_PATH="$_tb_gecko"
   fi
 fi
 

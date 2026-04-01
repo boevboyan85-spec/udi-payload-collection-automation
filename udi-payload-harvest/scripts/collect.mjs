@@ -10,10 +10,10 @@
  *   BRAVE_PATH        Executable for Brave (default: /usr/bin/brave-browser)
  *   OPERA_PATH        Executable for Opera (default: /usr/bin/opera)
  *   FIREFOX_PATH      Override Firefox binary
- *   TOR_BROWSER_PATH  Tor **`Browser/firefox`** ELF inside the bundle (not **`/usr/bin/tor-browser`** if that is a
- *                     shell wrapper). If unset, the script prefers **`~/tor-browser/Browser/firefox`**, then
- *                     **torbrowser-launcher**’s **`~/.local/share/torbrowser/tbb/.../Browser/firefox`**. Tor uses
- *                     **Selenium + GeckoDriver** (no Playwright Juggler).
+ *   TOR_BROWSER_PATH  Tor **`Browser/firefox-bin`** (Gecko ELF) or a non-script **`Browser/firefox`**. The file
+ *                     named **`firefox`** in official Linux bundles is often a **`#!` wrapper** — GeckoDriver needs
+ *                     **`firefox-bin`**. If unset, auto-detect under **`~/tor-browser/Browser`** and torbrowser-launcher’s
+ *                     **`tbb/.../Browser`**. Avoid **`/usr/bin/tor-browser`** when it is a distro script.
  *   GECKODRIVER_PATH  Optional path to **`geckodriver`** (else Selenium 4 may auto-download; or install `geckodriver` / `firefox-geckodriver`).
  *   TOR_WARMUP_MS     Default 15000 — sleep after WebDriver session before `driver.get` (Tor bootstrap).
  *   TOR_SETTLE_AFTER_LOAD_MS  Default COLLECTOR_SETTLE_MS — sleep after navigation before polling #udip.
@@ -174,7 +174,7 @@ function pathLooksLikeShellScript(filePath) {
   return buf[0] === 0x23 && buf[1] === 0x21; // #!
 }
 
-/** On Linux GeckoDriver must be given the real ELF `Browser/firefox`, not distro wrapper scripts. */
+/** On Linux GeckoDriver must be given a real ELF (e.g. **`firefox-bin`**), not shell wrappers. */
 function pathLooksLikeLinuxElf(filePath) {
   if (process.platform !== 'linux') return true;
   const buf = readExecutablePrefix(filePath, 4);
@@ -183,10 +183,36 @@ function pathLooksLikeLinuxElf(filePath) {
 }
 
 /**
- * `torbrowser-launcher` stores extracted bundles under ~/.local/share/torbrowser/tbb/<arch>/<dir>/Browser/firefox.
+ * Official Tor Browser / Mozilla Linux bundles use **`Browser/firefox`** as a **shell script** that sets up the
+ * environment; the actual Gecko binary is typically **`Browser/firefox-bin`**.
+ * @param {string} browserDir e.g. …/tor-browser/Browser
  * @returns {string|null}
  */
-function findFirefoxUnderTorbrowserLauncherTbb() {
+function pickGeckoExecutableInBrowserDir(browserDir) {
+  if (!browserDir || !fs.existsSync(browserDir)) return null;
+  const names = ['firefox-bin', 'firefox'];
+  for (const name of names) {
+    const p = path.join(browserDir, name);
+    if (!fs.existsSync(p)) continue;
+    let st;
+    try {
+      st = fs.statSync(p);
+    } catch {
+      continue;
+    }
+    if (!st.isFile()) continue;
+    if (pathLooksLikeShellScript(p)) continue;
+    if (process.platform === 'linux' && !pathLooksLikeLinuxElf(p)) continue;
+    return p;
+  }
+  return null;
+}
+
+/**
+ * `torbrowser-launcher` stores bundles under ~/.local/share/torbrowser/tbb/<arch>/<dir>/Browser/.
+ * @returns {string|null} path to **Browser** directory
+ */
+function findTbbBrowserDir() {
   const tbb = path.join(os.homedir(), '.local', 'share', 'torbrowser', 'tbb');
   if (!fs.existsSync(tbb)) return null;
   let archDirents;
@@ -206,33 +232,75 @@ function findFirefoxUnderTorbrowserLauncherTbb() {
     }
     for (const bundleDir of inner) {
       if (!bundleDir.isDirectory()) continue;
-      const firefox = path.join(archPath, bundleDir.name, 'Browser', 'firefox');
-      if (fs.existsSync(firefox)) return firefox;
+      const browserDir = path.join(archPath, bundleDir.name, 'Browser');
+      if (fs.existsSync(browserDir)) return browserDir;
     }
   }
   return null;
 }
 
 /**
- * GeckoDriver requires the real **`Browser/firefox`** inside the Tor Browser bundle.
- * `/usr/bin/tor-browser` is often a **shell wrapper** (e.g. torbrowser-launcher) → “binary is not a Firefox executable”.
+ * @param {string} resolvedPath file or directory from TOR_BROWSER_PATH
+ * @returns {string[]}
+ */
+function expandEnvTorBrowserPath(resolvedPath) {
+  let st;
+  try {
+    st = fs.statSync(resolvedPath);
+  } catch {
+    return [resolvedPath];
+  }
+  if (st.isDirectory()) {
+    const p = pickGeckoExecutableInBrowserDir(resolvedPath);
+    return p ? [p] : [];
+  }
+  if (!st.isFile()) return [];
+
+  if (pathLooksLikeShellScript(resolvedPath)) {
+    const dir = path.dirname(resolvedPath);
+    const bin = path.join(dir, 'firefox-bin');
+    if (fs.existsSync(bin) && !pathLooksLikeShellScript(bin)) {
+      if (process.platform !== 'linux' || pathLooksLikeLinuxElf(bin)) {
+        return [bin];
+      }
+    }
+    throw new Error(
+      `TOR_BROWSER_PATH points to a shell script (${resolvedPath}). Selenium needs the Gecko ELF, usually …/Browser/firefox-bin — unset TOR_BROWSER_PATH to auto-detect, or set it to firefox-bin.`,
+    );
+  }
+  if (process.platform === 'linux' && !pathLooksLikeLinuxElf(resolvedPath)) {
+    return [resolvedPath];
+  }
+  return [resolvedPath];
+}
+
+/**
+ * GeckoDriver needs the **ELF** inside the bundle (**`firefox-bin`**, or a non-script **`firefox`**).
+ * **`Browser/firefox`** is often a **`#!` wrapper**; **`/usr/bin/tor-browser`** is usually a distro script.
  */
 function resolveTorBrowserFirefoxBinary() {
   const envRaw = (process.env.TOR_BROWSER_PATH || '').trim();
-  const tbbFirefox = findFirefoxUnderTorbrowserLauncherTbb();
-  const candidates = [];
-  if (envRaw) candidates.push(path.resolve(envRaw));
-  candidates.push(
-    path.join(os.homedir(), 'tor-browser', 'Browser', 'firefox'),
-    ...(tbbFirefox ? [tbbFirefox] : []),
-    '/usr/local/tor-browser/Browser/firefox',
-    '/opt/tor-browser/Browser/firefox',
-    '/usr/bin/tor-browser',
-    '/usr/local/bin/tor-browser',
-  );
+  const orderedPaths = [];
+
+  if (envRaw) {
+    orderedPaths.push(...expandEnvTorBrowserPath(path.resolve(envRaw)));
+  }
+
+  const pushFromBrowserDir = (browserDir) => {
+    const p = pickGeckoExecutableInBrowserDir(browserDir);
+    if (p) orderedPaths.push(p);
+  };
+
+  pushFromBrowserDir(path.join(os.homedir(), 'tor-browser', 'Browser'));
+  const tbbBrowser = findTbbBrowserDir();
+  if (tbbBrowser) pushFromBrowserDir(tbbBrowser);
+  pushFromBrowserDir('/usr/local/tor-browser/Browser');
+  pushFromBrowserDir('/opt/tor-browser/Browser');
+
+  orderedPaths.push('/usr/bin/tor-browser', '/usr/local/bin/tor-browser');
 
   const seen = new Set();
-  for (const p of candidates) {
+  for (const p of orderedPaths) {
     if (!p || seen.has(p)) continue;
     seen.add(p);
     let st;
@@ -243,27 +311,20 @@ function resolveTorBrowserFirefoxBinary() {
     }
     if (!st.isFile()) continue;
 
-    const fromEnv = Boolean(envRaw && path.resolve(envRaw) === p);
     if (pathLooksLikeShellScript(p)) {
-      if (fromEnv) {
-        throw new Error(
-          `TOR_BROWSER_PATH points to a launcher script (${p}), not the real browser. Set TOR_BROWSER_PATH to …/Browser/firefox inside the Tor bundle (e.g. ${path.join(os.homedir(), 'tor-browser', 'Browser', 'firefox')}).`,
-        );
-      }
       process.stderr.write(
         `Tor: skipping launcher script (not a Gecko binary): ${p}\n`,
       );
       continue;
     }
     if (process.platform === 'linux' && !pathLooksLikeLinuxElf(p)) {
-      if (fromEnv) return p;
       continue;
     }
     return p;
   }
 
   throw new Error(
-    `No usable Tor Browser Firefox binary (ELF …/Browser/firefox). Install the tarball to ${path.join(os.homedir(), 'tor-browser')} (setup-kasm-ubuntu.sh) or run the Tor GUI once and retry; avoid TOR_BROWSER_PATH=/usr/bin/tor-browser when that file is a wrapper.`,
+    `No usable Tor Browser Gecko binary (try …/Browser/firefox-bin). Install the tarball to ${path.join(os.homedir(), 'tor-browser')} (setup-kasm-ubuntu.sh) or run the Tor GUI once; avoid TOR_BROWSER_PATH=/usr/bin/tor-browser when that file is a wrapper.`,
   );
 }
 

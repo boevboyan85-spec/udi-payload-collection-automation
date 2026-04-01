@@ -24,7 +24,7 @@ chmod +x run-kasm.sh scripts/collect.mjs
 ./run-kasm.sh
 ```
 
-**VM bootstrap:** [`setup-kasm-ubuntu.sh`](setup-kasm-ubuntu.sh) installs Node 20, Playwright deps/browsers, Brave, and **Tor Browser** on **amd64** (official tarball → `~/tor-browser`, **`TOR_BROWSER_PATH`**). Downloads use a browser **User-Agent** and try several Tor mirrors (some networks return **403** to plain `curl`). On **arm64** it installs **`torbrowser-launcher`** (run once from the GUI to download Tor, then set **`TOR_BROWSER_PATH`**). Skip Tor with **`SKIP_TOR_BROWSER=1`**; pin a version with **`TOR_BROWSER_VERSION`**. **`run-kasm.sh`** exports **`TOR_BROWSER_PATH`** automatically when `~/tor-browser/Browser/firefox` exists and the variable is unset.
+**VM bootstrap:** [`setup-kasm-ubuntu.sh`](setup-kasm-ubuntu.sh) installs Node 20, Playwright deps/browsers, Brave, and **Tor Browser** on **amd64** (official tarball → `~/tor-browser`, **`TOR_BROWSER_PATH`**). Downloads use a browser **User-Agent** and try several Tor mirrors (some networks return **403** to plain `curl`). On **arm64** it installs **`torbrowser-launcher`** (run once from the GUI to download Tor, then set **`TOR_BROWSER_PATH`**). Skip Tor with **`SKIP_TOR_BROWSER=1`**; pin a version with **`TOR_BROWSER_VERSION`**. **`run-kasm.sh`** exports **`TOR_BROWSER_PATH`** automatically when **`~/tor-browser/Browser/firefox-bin`** (or a non-script **`firefox`**) exists and the variable is unset.
 
 Or manually:
 
@@ -47,14 +47,14 @@ Comma-separated list in **`UDIBROWSERS`** (default: `chrome,chromium,firefox,bra
 | `brave` | `BRAVE_PATH` or `/usr/bin/brave-browser` |
 | `opera` | `OPERA_PATH` or `/usr/bin/opera` |
 | `firefox` | Playwright’s bundled Firefox unless **`FIREFOX_PATH`** is set (system Firefox) |
-| `tor` | **`TOR_BROWSER_PATH`** → **`…/tor-browser/Browser/firefox`**. Uses **Selenium WebDriver + GeckoDriver** (Marionette), **not** Playwright — real Tor Browser does not include Playwright’s **Juggler** automation patch, so `firefox.launch` hangs after the UI opens. Install **`geckodriver`** (e.g. `apt install firefox-geckodriver` / `geckodriver`) or set **`GECKODRIVER_PATH`**. Selenium 4 may download a driver if none is found. |
+| `tor` | **`TOR_BROWSER_PATH`** → **`…/tor-browser/Browser/firefox-bin`** (Gecko ELF; **`Browser/firefox`** is often a wrapper script). Uses **Selenium + GeckoDriver** (Marionette), **not** Playwright. Install **`geckodriver`** or set **`GECKODRIVER_PATH`**. Selenium 4 may download a driver if none is found. |
 | `webkit` | Playwright WebKit (not Safari). Payload comes from **`#udip` / `#txId`** on the collector page (same as other browsers). |
 
 Example:
 
 ```bash
 export UDIBROWSERS=chrome,firefox,brave,opera,tor,webkit
-export TOR_BROWSER_PATH="/path/to/tor-browser/Browser/firefox"
+export TOR_BROWSER_PATH="/path/to/tor-browser/Browser/firefox-bin"
 npm run collect
 ```
 
@@ -164,11 +164,11 @@ This commits **`results/txids.jsonl`** and runs **`git push origin develop`**. F
 
 **Tor (Selenium): `binary is not a Firefox executable`**
 
-- GeckoDriver must launch the real **`Browser/firefox`** binary inside the Tor bundle (e.g. **`~/tor-browser/Browser/firefox`**). **`/usr/bin/tor-browser`** from **`torbrowser-launcher`** is usually a **shell script**, not Firefox. The collector skips such wrappers and auto-detects the tarball path and **`~/.local/share/torbrowser/tbb/.../Browser/firefox`**. If it still fails, set **`TOR_BROWSER_PATH`** to the **`firefox`** file under **`Browser/`** explicitly. Stderr logs **`Tor: binary …`** when it picks one.
+- GeckoDriver must launch the **Gecko ELF**, usually **`Browser/firefox-bin`**. On Linux, **`Browser/firefox`** is often a **shell wrapper** (`#!`) that sets the library path — using it as **`TOR_BROWSER_PATH`** fails. The collector prefers **`firefox-bin`**, then a non-script **`firefox`**, and scans **`~/tor-browser/Browser`** and **`~/.local/share/torbrowser/tbb/.../Browser`**. **`/usr/bin/tor-browser`** is usually a distro script (skipped). Stderr logs **`Tor: binary …`** when it picks one.
 
 **Brave / Opera / Tor not found**
 
-- Set **`BRAVE_PATH`**, **`OPERA_PATH`**, or **`TOR_BROWSER_PATH`**. For Tor + Selenium use **`…/Browser/firefox`**, not a **`tor-browser`** launcher script in **`/usr/bin`**.
+- Set **`BRAVE_PATH`**, **`OPERA_PATH`**, or **`TOR_BROWSER_PATH`**. For Tor + Selenium use **`…/Browser/firefox-bin`** (or unset for auto-detect), not **`/usr/bin/tor-browser`** when that is a wrapper.
 
 **Firefox (Playwright): `CanCreateUserNamespace() … EPERM`**
 
