@@ -85,6 +85,46 @@ HEADLESS=1 npm run collect
    `txId: …`  
    User-Agent, blank line, then payload.
 
+4. **Append a machine-readable row** to [`results/txids.jsonl`](results/txids.jsonl) (JSON Lines: one JSON object per line).
+
+### `results/txids.jsonl` (JSONL)
+
+Each successful browser run appends one line:
+
+```json
+{"txId":"…","browserName":"Google Chrome","browserVersion":"131.0.6778.0","fetchedAt":"2026-04-01T14:00:00.000Z"}
+```
+
+| Field | Meaning |
+| ----- | ------- |
+| `txId` | Value from `#txId` (may be empty string) |
+| `browserName` | Display label (e.g. Google Chrome, Brave) |
+| `browserVersion` | Playwright `browser.version()` (engine/browser build string) |
+| `fetchedAt` | ISO-8601 timestamp when the row was written |
+
+**Why JSONL:** easy to append without rewriting the file; easy to stream in another automation (`readline` / `jq -c .`). Use **`SKIP_RESULTS_FILE=1`** to disable writing.
+
+| Env | Default |
+| --- | ------- |
+| `RESULTS_FILE` | `<project>/results/txids.jsonl` (override path; relative paths are under the project root) |
+| `SKIP_RESULTS_FILE` | unset — set to `1` to skip the file |
+| `AUTO_PUSH_RESULTS` | **on** by default — after the last browser, runs **`scripts/push-results.sh`** (commit + **`git push origin develop`**). Set to **`0`** or **`false`** to disable. |
+
+### Push results to GitHub (`develop`)
+
+**Automatic (default):** after every `npm run collect`, if **`results/txids.jsonl`** exists and you are inside a **git** clone with **`origin`** and credentials, the script commits changes and pushes **`develop`**. Use **`AUTO_PUSH_RESULTS=0`** to skip.
+
+**Manual:** from the **`udi-payload-harvest`** folder:
+
+```bash
+chmod +x scripts/push-results.sh
+npm run push-results -- "chore(results): append txId capture records"
+```
+
+This commits **`results/txids.jsonl`** and runs **`git push origin develop`**. For the parent repo ([`udi-payload-collection-automation`](https://github.com/boevboyan85-spec/udi-payload-collection-automation)), run from the cloned tree so git sees **`udi-payload-harvest/results/txids.jsonl`**.
+
+**Consuming downstream:** read the file line-by-line, `JSON.parse` each line, and pass `txId` to your service.
+
 ## Troubleshooting
 
 **Empty payload / missing txId**

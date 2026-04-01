@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "collect": "node scripts/collect.mjs",
-    "install:browsers": "playwright install chromium firefox webkit"
+    "install:browsers": "playwright install chromium firefox webkit",
+    "push-results": "bash scripts/push-results.sh"
   },
   "engines": {
     "node": ">=18"

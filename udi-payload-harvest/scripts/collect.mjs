@@ -16,11 +16,21 @@
  *   TEXT_SYNC_STABLE_MS Poll interval while waiting for textarea to finish loading (default: 400)
  *   TEXT_SYNC_STABLE_TICKS Value unchanged this many polls => stable (default: 4)
  *   COLLECTOR_SETTLE_MS  Extra wait after load so GDTM can inject #udip / #txId (default: 2000)
+ *   RESULTS_FILE       Path to JSONL log (default: <project>/results/txids.jsonl)
+ *   SKIP_RESULTS_FILE  Set to 1 to disable writing txId records
+ *   AUTO_PUSH_RESULTS  Set to 0/false to skip git commit+push after the last browser (default: on)
  */
 
+import { spawnSync } from 'node:child_process';
 import { chromium, firefox, webkit } from 'playwright';
 import fs from 'node:fs';
+import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.join(__dirname, '..');
 
 const COLLECTOR_URL =
   process.env.COLLECTOR_URL ||
@@ -37,7 +47,85 @@ const TEXT_SYNC_STABLE_MS = Number(process.env.TEXT_SYNC_STABLE_MS || 400);
 const TEXT_SYNC_STABLE_TICKS = Number(process.env.TEXT_SYNC_STABLE_TICKS || 4);
 const COLLECTOR_SETTLE_MS = Number(process.env.COLLECTOR_SETTLE_MS || 2000);
 
+const DEFAULT_RESULTS_FILE = path.join(PROJECT_ROOT, 'results', 'txids.jsonl');
+
 const DEFAULT_BROWSERS = ['chrome', 'firefox', 'chromium'];
+
+/**
+ * Append one JSON object per line (JSONL) for downstream consumption.
+ * @param {{ txId: string, browserName: string, browserVersion: string, fetchedAt: string }} row
+ */
+function appendTxIdRecord(row) {
+  if (process.env.SKIP_RESULTS_FILE === '1' || process.env.SKIP_RESULTS_FILE === 'true') {
+    return;
+  }
+  const dest =
+    process.env.RESULTS_FILE && process.env.RESULTS_FILE.length > 0
+      ? path.isAbsolute(process.env.RESULTS_FILE)
+        ? process.env.RESULTS_FILE
+        : path.join(PROJECT_ROOT, process.env.RESULTS_FILE)
+      : DEFAULT_RESULTS_FILE;
+  try {
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    const line = `${JSON.stringify(row)}\n`;
+    fs.appendFileSync(dest, line, 'utf8');
+    process.stderr.write(
+      `Appended txId record (${row.browserName}) → ${path.relative(PROJECT_ROOT, dest)}\n`,
+    );
+  } catch (e) {
+    process.stderr.write(`Warning: could not write results file: ${e?.message || e}\n`);
+  }
+}
+
+/**
+ * Run scripts/push-results.sh after all browsers (commit + push results/txids.jsonl to origin develop).
+ */
+function maybeAutoPushResults() {
+  const opt = process.env.AUTO_PUSH_RESULTS;
+  if (opt === '0' || opt === 'false') {
+    process.stderr.write('Auto-push skipped (AUTO_PUSH_RESULTS=0).\n');
+    return;
+  }
+
+  const dest =
+    process.env.RESULTS_FILE && process.env.RESULTS_FILE.length > 0
+      ? path.isAbsolute(process.env.RESULTS_FILE)
+        ? process.env.RESULTS_FILE
+        : path.join(PROJECT_ROOT, process.env.RESULTS_FILE)
+      : DEFAULT_RESULTS_FILE;
+
+  if (!fs.existsSync(dest)) {
+    process.stderr.write('Auto-push skipped: no results file on disk.\n');
+    return;
+  }
+
+  const script = path.join(PROJECT_ROOT, 'scripts', 'push-results.sh');
+  if (!fs.existsSync(script)) {
+    process.stderr.write('Auto-push skipped: scripts/push-results.sh missing.\n');
+    return;
+  }
+
+  const msg = `chore(results): append txId capture records (${new Date().toISOString()})`;
+  process.stderr.write('\n--- Auto-push results to origin develop ---\n');
+  const r = spawnSync('bash', [script, msg], {
+    cwd: PROJECT_ROOT,
+    stdio: 'inherit',
+    env: process.env,
+    shell: false,
+  });
+
+  if (r.error) {
+    process.stderr.write(`Auto-push failed: ${r.error.message}\n`);
+    if (!process.exitCode) process.exitCode = 1;
+    return;
+  }
+  if (r.status !== 0) {
+    process.stderr.write(
+      `Auto-push exited with code ${r.status}. Configure git remote and credentials, or set AUTO_PUSH_RESULTS=0.\n`,
+    );
+    if (!process.exitCode) process.exitCode = 1;
+  }
+}
 
 /**
  * Playwright may resolve inputValue() to undefined; String(undefined) is the literal word "undefined".
@@ -296,6 +384,14 @@ async function runOneBrowser(browser, displayName) {
   const block = `\n--- BROWSER: ${String(displayName)} | engine: ${String(version || 'unknown')} | ${ts} ---\ntxId: ${String(txId || '')}\n${String(ua)}\n\n${String(payload)}\n`;
 
   await appendToSharedText(page, block);
+
+  appendTxIdRecord({
+    txId: txId || '',
+    browserName: displayName,
+    browserVersion: String(version || 'unknown'),
+    fetchedAt: ts,
+  });
+
   await context.close();
 }
 
@@ -393,6 +489,8 @@ async function main() {
       await browser.close().catch(() => {});
     }
   }
+
+  maybeAutoPushResults();
 
   if (failures.length) {
     process.stderr.write(
