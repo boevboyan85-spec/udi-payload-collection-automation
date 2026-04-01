@@ -94,6 +94,25 @@ function looksLikePayload(s) {
 }
 
 /**
+ * Clipboard reads on WebKit/Linux can return stale OS clipboard (terminal selection, old Playwright errors).
+ * Strip obvious non-payload lines before using the string.
+ * @param {string} s
+ */
+function stripClipboardNoise(s) {
+  if (!s || typeof s !== 'string') return '';
+  const lines = s.split('\n');
+  const kept = lines.filter((line) => {
+    const t = line.trim();
+    if (/^>>>\s/.test(t)) return false;
+    if (/^Run failed:/i.test(t)) return false;
+    if (/browserContext\.newPage/i.test(t)) return false;
+    if (/Unknown permission:\s*clipboard/i.test(t)) return false;
+    return true;
+  });
+  return kept.join('\n').trim();
+}
+
+/**
  * @param {import('playwright').Page} page
  */
 async function extractPayloadFromDom(page) {
@@ -177,24 +196,55 @@ async function readClipboardWithRetries(page, copyBtn) {
 }
 
 /**
+ * Poll DOM for payload (WebKit: avoid clipboard — it often reads stale terminal / error text).
  * @param {import('playwright').Page} page
  */
-async function obtainPayload(page) {
+async function obtainPayloadFromDomOnly(page) {
+  const copyBtn = page.getByRole('button', { name: /copy\s*payload/i }).first();
+  for (let i = 0; i < 60; i++) {
+    await page.waitForTimeout(400);
+    let dom = await extractPayloadFromDom(page);
+    dom = stripClipboardNoise(dom || '');
+    if (dom && looksLikePayload(dom)) return dom.trim();
+    if (dom && dom.length >= 32) return dom.trim();
+    if (i % 5 === 0) await copyBtn.click().catch(() => {});
+  }
+  const last = stripClipboardNoise((await extractPayloadFromDom(page)) || '');
+  return last.trim();
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {{ useClipboard?: boolean }} [opts]
+ */
+async function obtainPayload(page, opts = {}) {
+  const useClipboard = opts.useClipboard !== false;
+
   await waitForCopyButtonReady(page);
   await page.waitForTimeout(1500);
 
   let dom = await extractPayloadFromDom(page);
+  dom = stripClipboardNoise(dom || '');
   if (dom && looksLikePayload(dom)) return dom.trim();
 
+  if (!useClipboard) {
+    const wk = await obtainPayloadFromDomOnly(page);
+    if (wk && wk.length >= 16) return wk;
+    throw new Error(
+      `WebKit: could not read payload from DOM only. Open ${COLLECTOR_URL} and confirm payload appears on the page.`,
+    );
+  }
+
   const copyBtn = page.getByRole('button', { name: /copy\s*payload/i }).first();
-  const fromClip = await readClipboardWithRetries(page, copyBtn);
+  let fromClip = await readClipboardWithRetries(page, copyBtn);
+  fromClip = stripClipboardNoise(fromClip);
   if (fromClip && looksLikePayload(fromClip)) return fromClip.trim();
 
-  dom = await extractPayloadFromDom(page);
+  dom = stripClipboardNoise((await extractPayloadFromDom(page)) || '');
   if (dom && dom.length >= 24) return dom.trim();
   if (fromClip && fromClip.length >= 24) return fromClip.trim();
 
-  return (fromClip || dom || '').trim();
+  return stripClipboardNoise((fromClip || dom || '').trim());
 }
 
 /**
@@ -326,7 +376,8 @@ async function runOneBrowser(browser, displayName) {
   await page.goto(COLLECTOR_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
 
-  const payload = await obtainPayload(page);
+  const useClipboard = browser.browserType().name() !== 'webkit';
+  const payload = await obtainPayload(page, { useClipboard });
   if (!payload || payload.length < 16) {
     throw new Error(
       `Could not read payload (clipboard/DOM too short after Copy retries). Open ${COLLECTOR_URL} and confirm Copy Payload works manually. Payload length was ${payload ? payload.length : 0}.`,

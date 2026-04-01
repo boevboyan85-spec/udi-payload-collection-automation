@@ -46,7 +46,7 @@ Comma-separated list in **`UDIBROWSERS`** (default: `chrome,firefox,chromium`):
 | `opera` | `OPERA_PATH` or `/usr/bin/opera` |
 | `firefox` | System Firefox or `FIREFOX_PATH` |
 | `tor` | `TOR_BROWSER_PATH` or `/usr/bin/tor-browser` |
-| `webkit` | Playwright WebKit (not Safari). Clipboard **permission grants** are skipped (WebKit does not support those names); payload capture still uses DOM + Copy. |
+| `webkit` | Playwright WebKit (not Safari). Clipboard **permission grants** are skipped. **Payload is read from the DOM only** (clipboard is ignored) so stale terminal/Playwright error text cannot be mistaken for the payload. |
 
 Example:
 
