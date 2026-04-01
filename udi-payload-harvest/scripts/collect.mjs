@@ -4,7 +4,7 @@
  * then records rows to results/txids.jsonl (and optional git push).
  *
  * Env:
- *   UDIBROWSERS       Comma list: chrome,chromium,firefox,brave,opera,tor,webkit (default: chrome,firefox,chromium)
+ *   UDIBROWSERS       Comma list: chrome,chromium,firefox,brave,opera,tor,webkit (default: chrome,chromium,firefox,brave,tor)
  *   COLLECTOR_URL     Default: https://gdtm-dev.globalsiteanalytics.com/kasm.html (#udip payload, #txId)
  *   HEADLESS          1/true for headless (default: false — use headed on KASM)
  *   BRAVE_PATH        Executable for Brave (default: /usr/bin/brave-browser)
@@ -375,7 +375,13 @@ async function runTorSelenium(displayName) {
 
 const DEFAULT_RESULTS_FILE = path.join(PROJECT_ROOT, 'results', 'txids.jsonl');
 
-const DEFAULT_BROWSERS = ['chrome', 'firefox', 'chromium'];
+const DEFAULT_BROWSERS = [
+  'chrome',
+  'chromium',
+  'firefox',
+  'brave',
+  'tor',
+];
 
 /** Rows collected in the current `npm run collect` only (replaces file on each run). */
 let currentRunTxRows = [];

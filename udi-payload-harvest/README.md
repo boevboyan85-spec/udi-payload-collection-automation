@@ -38,7 +38,7 @@ npm run collect
 
 ## Configure browsers
 
-Comma-separated list in **`UDIBROWSERS`** (default: `chrome,firefox,chromium`):
+Comma-separated list in **`UDIBROWSERS`** (default: `chrome,chromium,firefox,brave,tor`):
 
 | Token | Behavior |
 | ----- | -------- |
@@ -176,7 +176,7 @@ This commits **`results/txids.jsonl`** and runs **`git push origin develop`**. F
 
 **Tor Browser opens but automation never navigates / stuck until you close the window**
 
-- **Tor is not Playwright-Juggler Firefox.** This project uses **Selenium + GeckoDriver**. Install **`geckodriver`**, run **`npm install`**, include **`tor`** in **`UDIBROWSERS`**.
+- **Tor is not Playwright-Juggler Firefox.** This project uses **Selenium + GeckoDriver**. Install **`geckodriver`**, run **`npm install`**. **`tor`** is in the default **`UDIBROWSERS`**; add it if you use a shorter list.
 
 **Tor opens the URL then the window closes with little or no terminal output**
 

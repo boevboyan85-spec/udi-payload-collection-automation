@@ -11,6 +11,9 @@
 # PLAYWRIGHT_IGNORE_HTTPS_ERRORS=1 (default below): Playwright Firefox ignores TLS chain errors
 # (e.g. SEC_ERROR_UNKNOWN_ISSUER with corporate TLS inspection). Set 0 to enforce strict TLS.
 # PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX=1 (default): MOZ_DISABLE_CONTENT_SANDBOX for Firefox/Tor in Kasm (EPERM).
+# TOR_WARMUP_MS=10000 (default below): ms to wait after Marionette before navigation (collect.mjs); override if needed.
+# BRAVE_PATH / TOR_BROWSER_PATH: exported when /usr/bin/brave-browser or ~/tor-browser/Browser/firefox exists.
+# UDIBROWSERS default: chrome,chromium,firefox,brave,tor (matches collect.mjs / run-kasm.sh).
 #
 # Installs Brave from the official APT repo (for UDIBROWSERS=brave). Set SKIP_BRAVE_APT=1 to skip.
 #
@@ -39,6 +42,13 @@ export PLAYWRIGHT_IGNORE_HTTPS_ERRORS
 PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX="${PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX:-1}"
 export PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX
 
+# Tor + Selenium: wait after Marionette before driver.get (milliseconds; 10000 ≈ 10s).
+TOR_WARMUP_MS="${TOR_WARMUP_MS:-10000}"
+export TOR_WARMUP_MS
+
+UDIBROWSERS="${UDIBROWSERS:-chrome,chromium,firefox,brave,tor}"
+export UDIBROWSERS
+
 mkdir -p "$HOME/Documents/git"
 cd "$HOME/Documents/git"
 
@@ -66,6 +76,10 @@ if [[ "${SKIP_BRAVE_APT:-}" != "1" ]]; then
     | sudo tee /etc/apt/sources.list.d/brave-browser-release.list >/dev/null
   sudo apt-get update
   sudo apt-get install -y brave-browser
+  if [[ -x /usr/bin/brave-browser ]]; then
+    BRAVE_PATH="${BRAVE_PATH:-/usr/bin/brave-browser}"
+    export BRAVE_PATH
+  fi
 else
   echo "Skipping Brave APT install (SKIP_BRAVE_APT=1)."
 fi
@@ -129,6 +143,17 @@ else
   echo "Skipping Tor Browser install (SKIP_TOR_BROWSER=1)."
 fi
 
+# If installs were skipped or paths were never exported, set when binaries exist.
+if [[ -z "${BRAVE_PATH:-}" ]] && [[ -x /usr/bin/brave-browser ]]; then
+  export BRAVE_PATH="/usr/bin/brave-browser"
+fi
+if [[ -z "${TOR_BROWSER_PATH:-}" ]]; then
+  _tb_firefox="${HOME}/tor-browser/Browser/firefox"
+  if [[ -x "$_tb_firefox" ]]; then
+    export TOR_BROWSER_PATH="$_tb_firefox"
+  fi
+fi
+
 if [[ -f /etc/apt/sources.list.d/sublime-text.list ]]; then
   echo "Commenting first line of /etc/apt/sources.list.d/sublime-text.list"
   sudo sed -i '1s/^/# /' /etc/apt/sources.list.d/sublime-text.list
@@ -152,6 +177,8 @@ npx playwright install chromium firefox webkit
 unset NODE_TLS_REJECT_UNAUTHORIZED
 
 echo "Done. Harvest project directory: $(pwd)"
-if [[ -n "${TOR_BROWSER_PATH:-}" ]]; then
-  echo "Tor (Playwright): export TOR_BROWSER_PATH=\"$TOR_BROWSER_PATH\"  # add to ~/.bashrc to persist"
-fi
+echo "Add to ~/.bashrc (or export in your session) to persist for npm run collect:"
+echo "  export UDIBROWSERS=${UDIBROWSERS}  # default matches collect.mjs"
+echo "  export TOR_WARMUP_MS=${TOR_WARMUP_MS}  # ms after Marionette before navigation (~10s)"
+[[ -n "${BRAVE_PATH:-}" ]] && echo "  export BRAVE_PATH=\"$BRAVE_PATH\""
+[[ -n "${TOR_BROWSER_PATH:-}" ]] && echo "  export TOR_BROWSER_PATH=\"$TOR_BROWSER_PATH\"  # Selenium + Tor Browser"

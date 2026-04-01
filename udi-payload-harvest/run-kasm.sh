@@ -22,7 +22,7 @@ fi
 echo "Installing browser binaries for Playwright (chromium, firefox, webkit)..."
 npx playwright install chromium firefox webkit
 
-: "${UDIBROWSERS:=chrome,firefox,chromium}"
+: "${UDIBROWSERS:=chrome,chromium,firefox,brave,tor}"
 export UDIBROWSERS
 # Corp TLS inspection: Playwright Firefox does not use the OS CA store by default.
 : "${PLAYWRIGHT_IGNORE_HTTPS_ERRORS:=1}"
