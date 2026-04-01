@@ -162,9 +162,13 @@ This commits **`results/txids.jsonl`** and runs **`git push origin develop`**. F
 - The script no longer waits for **`networkidle`** (analytics/WebSockets often prevent it from ever finishing). It waits for **`load`**, then **`COLLECTOR_SETTLE_MS`**, then **`#udip` / `#txId` attached** (not only *visible*, so hidden inputs still count).
 - If it still stalls, confirm the IDs in DevTools; inputs inside a **same-origin iframe** are handled. **Cross-origin** iframes cannot be read from the parent page — run against a page that exposes fields on the top document or use a proxy host.
 
+**Tor (Selenium): `binary is not a Firefox executable`**
+
+- GeckoDriver must launch the real **`Browser/firefox`** binary inside the Tor bundle (e.g. **`~/tor-browser/Browser/firefox`**). **`/usr/bin/tor-browser`** from **`torbrowser-launcher`** is usually a **shell script**, not Firefox. The collector skips such wrappers and auto-detects the tarball path and **`~/.local/share/torbrowser/tbb/.../Browser/firefox`**. If it still fails, set **`TOR_BROWSER_PATH`** to the **`firefox`** file under **`Browser/`** explicitly. Stderr logs **`Tor: binary …`** when it picks one.
+
 **Brave / Opera / Tor not found**
 
-- Set `BRAVE_PATH`, `OPERA_PATH`, or `TOR_BROWSER_PATH` to the real binary. Tor is often under `tor-browser/Browser/firefox` or a distro wrapper script.
+- Set **`BRAVE_PATH`**, **`OPERA_PATH`**, or **`TOR_BROWSER_PATH`**. For Tor + Selenium use **`…/Browser/firefox`**, not a **`tor-browser`** launcher script in **`/usr/bin`**.
 
 **Firefox (Playwright): `CanCreateUserNamespace() … EPERM`**
 
