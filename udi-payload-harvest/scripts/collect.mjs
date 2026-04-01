@@ -183,8 +183,99 @@ function pathLooksLikeLinuxElf(filePath) {
 }
 
 /**
- * Official Tor Browser / Mozilla Linux bundles use **`Browser/firefox`** as a **shell script** that sets up the
- * environment; the actual Gecko binary is typically **`Browser/firefox-bin`**.
+ * Mozilla-style **`firefox`** script often ends with **`exec …/firefox-bin`** (or another path).
+ * @param {string} wrapperPath
+ * @returns {string|null}
+ */
+function geckoBinaryFromFirefoxWrapperScript(wrapperPath) {
+  const browserDir = path.dirname(wrapperPath);
+  let text;
+  try {
+    text = fs.readFileSync(wrapperPath, 'utf8');
+  } catch {
+    return null;
+  }
+
+  function tryCandidate(rawPath) {
+    if (!rawPath || rawPath.includes('$')) return null;
+    const p = rawPath.trim().replace(/^["']|["']$/g, '');
+    if (!p) return null;
+    const candidate = path.isAbsolute(p) ? p : path.join(browserDir, p);
+    let st;
+    try {
+      st = fs.statSync(candidate);
+    } catch {
+      return null;
+    }
+    if (!st.isFile()) return null;
+    if (pathLooksLikeShellScript(candidate)) return null;
+    if (process.platform === 'linux' && !pathLooksLikeLinuxElf(candidate)) return null;
+    return candidate;
+  }
+
+  const mozEx = text.match(/^\s*(?:export\s+)?MOZ_EXECUTABLE=(.+)$/m);
+  if (mozEx) {
+    const fromMoz = tryCandidate(mozEx[1]);
+    if (fromMoz) return fromMoz;
+  }
+
+  for (const line of text.split(/\r?\n/)) {
+    let t = line.trim();
+    if (!t || t.startsWith('#') || !/^exec\s+/.test(t)) continue;
+    t = t.replace(/^exec\s+/, '').replace(/\s*\\\s*$/g, '').trim();
+    const tokens = t.split(/\s+/);
+    for (let i = 0; i < tokens.length; i++) {
+      const tok = tokens[i];
+      if (tok === 'env') {
+        while (i + 1 < tokens.length && /^[A-Z_][A-Z0-9_]*=/.test(tokens[i + 1])) {
+          i++;
+        }
+        continue;
+      }
+      if (/^[A-Z_][A-Z0-9_]*=/.test(tok)) continue;
+      if (tok.includes('$') || tok.includes('`')) continue;
+      const stripped = tok.replace(/^["']|["']$/g, '');
+      if (!stripped || stripped.startsWith('-')) continue;
+      const got = tryCandidate(stripped);
+      if (got) return got;
+    }
+  }
+  return null;
+}
+
+/**
+ * Linux tarballs may extract to **`~/tor-browser`**, **`~/tor-browser_en-US`**, etc.
+ * @returns {string[]} absolute **`…/Browser`** paths
+ */
+function discoverTorBrowserBrowserDirs() {
+  const home = os.homedir();
+  /** @type {string[]} */
+  const out = [];
+  const push = (browserDir) => {
+    if (!browserDir || !fs.existsSync(browserDir)) return;
+    const abs = path.resolve(browserDir);
+    if (!out.includes(abs)) out.push(abs);
+  };
+
+  push(path.join(home, 'tor-browser', 'Browser'));
+
+  let dirents;
+  try {
+    dirents = fs.readdirSync(home, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const d of dirents) {
+    if (!d.isDirectory()) continue;
+    if (!/^tor-browser/i.test(d.name)) continue;
+    push(path.join(home, d.name, 'Browser'));
+  }
+  return out;
+}
+
+/**
+ * Picks the Gecko ELF under **`Browser/`**: **`firefox-bin`**, non-script **`firefox`**, **`exec` target** from the
+ * **`firefox`** wrapper, or any **`firefox*`** ELF in that directory (bundle layout varies by version).
  * @param {string} browserDir e.g. …/tor-browser/Browser
  * @returns {string|null}
  */
@@ -204,6 +295,27 @@ function pickGeckoExecutableInBrowserDir(browserDir) {
     if (pathLooksLikeShellScript(p)) continue;
     if (process.platform === 'linux' && !pathLooksLikeLinuxElf(p)) continue;
     return p;
+  }
+
+  const wrapper = path.join(browserDir, 'firefox');
+  if (fs.existsSync(wrapper) && pathLooksLikeShellScript(wrapper)) {
+    const fromExec = geckoBinaryFromFirefoxWrapperScript(wrapper);
+    if (fromExec) return fromExec;
+  }
+
+  try {
+    const entries = fs.readdirSync(browserDir, { withFileTypes: true });
+    for (const ent of entries) {
+      if (!ent.isFile()) continue;
+      if (!/^firefox/i.test(ent.name)) continue;
+      if (/\.so$/i.test(ent.name)) continue;
+      const p = path.join(browserDir, ent.name);
+      if (pathLooksLikeShellScript(p)) continue;
+      if (process.platform === 'linux' && !pathLooksLikeLinuxElf(p)) continue;
+      return p;
+    }
+  } catch {
+    /* ignore */
   }
   return null;
 }
@@ -291,7 +403,10 @@ function resolveTorBrowserFirefoxBinary() {
     if (p) orderedPaths.push(p);
   };
 
-  pushFromBrowserDir(path.join(os.homedir(), 'tor-browser', 'Browser'));
+  for (const browserDir of discoverTorBrowserBrowserDirs()) {
+    pushFromBrowserDir(browserDir);
+  }
+
   const tbbBrowser = findTbbBrowserDir();
   if (tbbBrowser) pushFromBrowserDir(tbbBrowser);
   pushFromBrowserDir('/usr/local/tor-browser/Browser');
@@ -323,9 +438,26 @@ function resolveTorBrowserFirefoxBinary() {
     return p;
   }
 
-  throw new Error(
-    `No usable Tor Browser Gecko binary (try …/Browser/firefox-bin). Install the tarball to ${path.join(os.homedir(), 'tor-browser')} (setup-kasm-ubuntu.sh) or run the Tor GUI once; avoid TOR_BROWSER_PATH=/usr/bin/tor-browser when that file is a wrapper.`,
-  );
+  const homeTorDirs = (() => {
+    try {
+      return fs
+        .readdirSync(os.homedir(), { withFileTypes: true })
+        .filter((d) => d.isDirectory() && /^tor-browser/i.test(d.name))
+        .map((d) => path.join(os.homedir(), d.name));
+    } catch {
+      return [];
+    }
+  })();
+
+  let hint;
+  if (homeTorDirs.length) {
+    hint = ` Under home: ${homeTorDirs.join(', ')} — look for **Browser/firefox-bin** or an ELF **firefox**; the Linux tarball often extracts as **tor-browser_en-US** (collector now scans **tor-browser***).`;
+  } else {
+    hint =
+      ' No **~/tor-browser*** folder — Tor is missing (install failed, 403, or non-persistent Kasm home). Re-run **setup-kasm-ubuntu.sh**; set **TOR_BROWSER_PATH** to the real Gecko binary if Tor lives elsewhere.';
+  }
+
+  throw new Error(`No usable Tor Browser Gecko binary.${hint}`);
 }
 
 /**

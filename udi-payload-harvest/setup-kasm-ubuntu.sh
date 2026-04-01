@@ -85,15 +85,25 @@ else
 fi
 
 # Selenium/GeckoDriver needs the real ELF (firefox-bin). Browser/firefox is often a #! wrapper script.
+# Scans ~/tor-browser*/Browser — the official tarball often extracts as tor-browser_en-US, not tor-browser.
 tor_browser_gecko_exe() {
   local tb_home="$1"
-  local b="${tb_home}/Browser"
-  if [[ -x "$b/firefox-bin" ]]; then echo "$b/firefox-bin"; return 0; fi
-  if [[ -x "$b/firefox" ]]; then
-    local h
-    h=$(head -c2 "$b/firefox" 2>/dev/null || printf '')
-    if [[ "$h" != '#!' ]]; then echo "$b/firefox"; return 0; fi
-  fi
+  local b d
+  local -a candidates=()
+  [[ -d "${tb_home}/Browser" ]] && candidates+=("${tb_home}/Browser")
+  shopt -s nullglob
+  for d in "${HOME}"/tor-browser*/Browser; do
+    candidates+=("$d")
+  done
+  shopt -u nullglob
+  for b in "${candidates[@]}"; do
+    if [[ -x "$b/firefox-bin" ]]; then echo "$b/firefox-bin"; return 0; fi
+    if [[ -x "$b/firefox" ]]; then
+      local h
+      h=$(head -c2 "$b/firefox" 2>/dev/null || printf '')
+      if [[ "$h" != '#!' ]]; then echo "$b/firefox"; return 0; fi
+    fi
+  done
   return 1
 }
 
@@ -136,6 +146,18 @@ if [[ "${SKIP_TOR_BROWSER:-}" != "1" ]]; then
         mkdir -p "$PARENT"
         rm -rf "$TB_HOME"
         tar -xJf "$TMP_TB/$TB_FILE" -C "$PARENT"
+        # Many builds extract as ~/tor-browser_en-US (or similar), not ~/tor-browser.
+        if [[ ! -d "${TB_HOME}/Browser" ]]; then
+          shopt -s nullglob
+          for cand in "$PARENT"/tor-browser*; do
+            if [[ -d "$cand/Browser" ]]; then
+              rm -rf "$TB_HOME"
+              mv "$cand" "$TB_HOME"
+              break
+            fi
+          done
+          shopt -u nullglob
+        fi
         rm -rf "$TMP_TB"
         trap - EXIT
         if ! TB_GECKO=$(tor_browser_gecko_exe "$TB_HOME"); then
