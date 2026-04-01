@@ -13,6 +13,9 @@
 #
 # Installs Brave from the official APT repo (for UDIBROWSERS=brave). Set SKIP_BRAVE_APT=1 to skip.
 #
+# Installs Tor Browser: official tarball on amd64 (UDIBROWSERS=tor → TOR_BROWSER_PATH). Set SKIP_TOR_BROWSER=1
+# to skip. Override version: TOR_BROWSER_VERSION=15.0.8
+#
 set -euo pipefail
 
 GIT_USER_NAME="Boyan Boev"
@@ -48,7 +51,7 @@ fi
 cd "$REPO_DIR/$HARVEST_DIR_NAME"
 
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg apt-transport-https
+sudo apt-get install -y ca-certificates curl gnupg apt-transport-https xz-utils
 
 if [[ "${SKIP_BRAVE_APT:-}" != "1" ]]; then
   echo "Installing Brave Browser (official APT repository)..."
@@ -61,6 +64,42 @@ if [[ "${SKIP_BRAVE_APT:-}" != "1" ]]; then
   sudo apt-get install -y brave-browser
 else
   echo "Skipping Brave APT install (SKIP_BRAVE_APT=1)."
+fi
+
+if [[ "${SKIP_TOR_BROWSER:-}" != "1" ]]; then
+  TB_VER="${TOR_BROWSER_VERSION:-15.0.8}"
+  TB_HOME="${TOR_BROWSER_HOME:-$HOME/tor-browser}"
+  TB_FIREFOX="${TB_HOME}/Browser/firefox"
+  DPKG_ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
+
+  if [[ "$DPKG_ARCH" == "amd64" ]]; then
+    if [[ -x "$TB_FIREFOX" ]]; then
+      echo "Tor Browser already present at $TB_HOME (skip download)."
+    else
+      echo "Installing Tor Browser ${TB_VER} (official tarball, x86_64)..."
+      TB_FILE="tor-browser-linux-x86_64-${TB_VER}.tar.xz"
+      TB_URL="https://dist.torproject.org/torbrowser/${TB_VER}/${TB_FILE}"
+      TMP_TB="$(mktemp -d)"
+      trap 'rm -rf "$TMP_TB"' EXIT
+      curl -fSL "$TB_URL" -o "$TMP_TB/$TB_FILE"
+      PARENT="$(dirname "$TB_HOME")"
+      mkdir -p "$PARENT"
+      rm -rf "$TB_HOME"
+      tar -xJf "$TMP_TB/$TB_FILE" -C "$PARENT"
+      rm -rf "$TMP_TB"
+      trap - EXIT
+      if [[ ! -x "$TB_FIREFOX" ]]; then
+        echo "Warning: expected $TB_FIREFOX missing after extract; check TOR_BROWSER_VERSION / tarball layout."
+      fi
+    fi
+    export TOR_BROWSER_PATH="$TB_FIREFOX"
+  else
+    echo "Tor Browser: no official Linux ${DPKG_ARCH} tarball in this script; installing torbrowser-launcher."
+    echo "Run it once from the desktop to download Tor, then set TOR_BROWSER_PATH to .../Browser/firefox under ~/.local/share/torbrowser"
+    sudo apt-get install -y torbrowser-launcher || true
+  fi
+else
+  echo "Skipping Tor Browser install (SKIP_TOR_BROWSER=1)."
 fi
 
 if [[ -f /etc/apt/sources.list.d/sublime-text.list ]]; then
@@ -80,3 +119,6 @@ npx playwright install chromium firefox webkit
 unset NODE_TLS_REJECT_UNAUTHORIZED
 
 echo "Done. Harvest project directory: $(pwd)"
+if [[ -n "${TOR_BROWSER_PATH:-}" ]]; then
+  echo "Tor (Playwright): export TOR_BROWSER_PATH=\"$TOR_BROWSER_PATH\"  # add to ~/.bashrc to persist"
+fi
