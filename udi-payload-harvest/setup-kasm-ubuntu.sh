@@ -8,6 +8,9 @@
 #   export GITHUB_TOKEN='...'
 # before running if you prefer not to use the embedded value.
 #
+# PLAYWRIGHT_IGNORE_HTTPS_ERRORS=1 (default below): Playwright Firefox ignores TLS chain errors
+# (e.g. SEC_ERROR_UNKNOWN_ISSUER with corporate TLS inspection). Set 0 to enforce strict TLS.
+#
 set -euo pipefail
 
 GIT_USER_NAME="Boyan Boev"
@@ -23,6 +26,9 @@ git config --global user.name "$GIT_USER_NAME"
 
 export GITHUB_USERNAME
 export GITHUB_TOKEN
+
+PLAYWRIGHT_IGNORE_HTTPS_ERRORS="${PLAYWRIGHT_IGNORE_HTTPS_ERRORS:-1}"
+export PLAYWRIGHT_IGNORE_HTTPS_ERRORS
 
 mkdir -p "$HOME/Documents/git"
 cd "$HOME/Documents/git"

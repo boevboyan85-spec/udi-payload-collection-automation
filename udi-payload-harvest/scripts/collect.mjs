@@ -21,6 +21,9 @@
  *   AUTO_PUSH_RESULTS  Set to 0/false to skip git commit+push after the last browser (default: on)
  *   GITHUB_USERNAME     For HTTPS push without prompts (use with GITHUB_TOKEN)
  *   GITHUB_TOKEN        GitHub PAT for git push over HTTPS (never commit this value)
+ *   PLAYWRIGHT_IGNORE_HTTPS_ERRORS  Default on (unset or 1/true). Set 0/false to enforce TLS.
+ *                                   Firefox bundled with Playwright uses its own trust store; corp MITM
+ *                                   often causes SEC_ERROR_UNKNOWN_ISSUER without this.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -48,6 +51,13 @@ const TEXT_SYNC_DRAIN_MS = Number(process.env.TEXT_SYNC_DRAIN_MS || 3000);
 const TEXT_SYNC_STABLE_MS = Number(process.env.TEXT_SYNC_STABLE_MS || 400);
 const TEXT_SYNC_STABLE_TICKS = Number(process.env.TEXT_SYNC_STABLE_TICKS || 4);
 const COLLECTOR_SETTLE_MS = Number(process.env.COLLECTOR_SETTLE_MS || 2000);
+
+const PLAYWRIGHT_IGNORE_HTTPS_ERRORS = (() => {
+  const v = process.env.PLAYWRIGHT_IGNORE_HTTPS_ERRORS;
+  if (v === '0' || v === 'false') return false;
+  if (v === '1' || v === 'true') return true;
+  return true;
+})();
 
 const DEFAULT_RESULTS_FILE = path.join(PROJECT_ROOT, 'results', 'txids.jsonl');
 
@@ -365,7 +375,9 @@ async function appendToSharedText(page, block) {
  * @param {string} displayName
  */
 async function runOneBrowser(browser, displayName) {
-  const context = await browser.newContext();
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: PLAYWRIGHT_IGNORE_HTTPS_ERRORS,
+  });
 
   const page = await context.newPage();
   let version = '';

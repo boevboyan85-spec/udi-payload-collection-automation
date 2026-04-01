@@ -44,7 +44,7 @@ Comma-separated list in **`UDIBROWSERS`** (default: `chrome,firefox,chromium`):
 | `chromium` | Playwright’s bundled Chromium |
 | `brave` | `BRAVE_PATH` or `/usr/bin/brave-browser` |
 | `opera` | `OPERA_PATH` or `/usr/bin/opera` |
-| `firefox` | System Firefox or `FIREFOX_PATH` |
+| `firefox` | Playwright’s bundled Firefox unless **`FIREFOX_PATH`** is set (system Firefox) |
 | `tor` | `TOR_BROWSER_PATH` or `/usr/bin/tor-browser` |
 | `webkit` | Playwright WebKit (not Safari). Payload comes from **`#udip` / `#txId`** on the collector page (same as other browsers). |
 
@@ -66,6 +66,7 @@ npm run collect
 | `TEXT_SYNC_STABLE_MS` | `400` — poll interval while waiting for `#text` to finish loading from sync |
 | `TEXT_SYNC_STABLE_TICKS` | `4` — how many unchanged polls count as “stable” |
 | `COLLECTOR_SETTLE_MS` | `2000` — extra wait after `kasm.html` loads so GDTM can fill `#udip` / `#txId` |
+| `PLAYWRIGHT_IGNORE_HTTPS_ERRORS` | Default **on** (`1` / unset). Playwright passes **`ignoreHTTPSErrors`** on the browser context so TLS still works when a corporate proxy re-signs HTTPS (Firefox often shows **`SEC_ERROR_UNKNOWN_ISSUER`** without this). Set to **`0`** or **`false`** to require a valid certificate chain. |
 
 ## Headless
 

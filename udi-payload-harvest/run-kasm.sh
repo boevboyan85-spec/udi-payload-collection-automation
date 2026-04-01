@@ -24,6 +24,9 @@ npx playwright install chromium firefox webkit
 
 : "${UDIBROWSERS:=chrome,firefox,chromium}"
 export UDIBROWSERS
+# Corp TLS inspection: Playwright Firefox does not use the OS CA store by default.
+: "${PLAYWRIGHT_IGNORE_HTTPS_ERRORS:=1}"
+export PLAYWRIGHT_IGNORE_HTTPS_ERRORS
 echo "UDIBROWSERS=$UDIBROWSERS"
 echo "Running collector (headed unless HEADLESS=1)..."
 npm run collect
