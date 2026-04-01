@@ -8,7 +8,7 @@ _Use this page as the Confluence source: copy sections into your space or paste 
 | ----- | ----- |
 | **Jira** | _(link: Test the effectiveness of device risk indicators for web events)_ |
 | **Collector (reference)** | https://gdtm-dev.globalsiteanalytics.com/kasm.html (`#udip`, `#txId`) |
-| **Shared text (lab sync)** | https://gdtm-dev.globalsiteanalytics.com/text.html |
+| **Results artifact** | `udi-payload-harvest/results/txids.jsonl` (per run) + optional `git push` to `develop` |
 | **Risk service / SDK** | _(version, environment, decrypt doc link)_ |
 | **Owner** | _(name)_ |
 | **Last updated** | _(date)_ |
@@ -21,7 +21,7 @@ _Use this page as the Confluence source: copy sections into your space or paste 
 
 1. Validate **collector** output: payload present, non-trivial length, repeatable where expected.
 2. Validate **Risk service** behavior: expected signals (indicators) for each scenario, with evidence.
-3. Record **limitations** (Safari on Linux, clipboard automation, shared-text sensitivity).
+3. Record **limitations** (Safari on Linux, clipboard automation, artifact handling).
 
 ---
 
@@ -117,4 +117,4 @@ _(Fill after test execution.)_
 
 ## Appendix: Automation (payload harvest)
 
-Batch collection from KASM: see project [README.md](../README.md) — `run-kasm.sh` / `npm run collect` appends labeled payloads to the shared text page for transfer to a local machine.
+Batch collection from KASM: see project [README.md](../README.md) — `run-kasm.sh` / `npm run collect` writes **`results/txids.jsonl`** (this run only) and can auto-push **`develop`** for downstream automation.

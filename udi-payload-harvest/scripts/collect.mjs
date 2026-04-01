@@ -1,20 +1,16 @@
 #!/usr/bin/env node
 /**
- * Launches each configured browser, opens the UDI collector, extracts the payload,
- * then appends a labeled block to the shared text page (does not replace existing text).
+ * Launches each configured browser, opens the UDI collector, extracts the payload and txId,
+ * then records rows to results/txids.jsonl (and optional git push).
  *
  * Env:
  *   UDIBROWSERS       Comma list: chrome,chromium,firefox,brave,opera,tor,webkit (default: chrome,firefox,chromium)
  *   COLLECTOR_URL     Default: https://gdtm-dev.globalsiteanalytics.com/kasm.html (#udip payload, #txId)
- *   TEXT_SYNC_URL     Default: https://gdtm-dev.globalsiteanalytics.com/text.html
  *   HEADLESS          1/true for headless (default: false — use headed on KASM)
  *   BRAVE_PATH        Executable for Brave (default: /usr/bin/brave-browser)
  *   OPERA_PATH        Executable for Opera (default: /usr/bin/opera)
  *   FIREFOX_PATH      Override Firefox binary
  *   TOR_BROWSER_PATH  Tor Browser binary (e.g. .../Browser/start-tor-browser or tor-browser)
- *   TEXT_SYNC_DRAIN_MS  Wait after appending so WebSocket can flush before browser closes (default: 3000)
- *   TEXT_SYNC_STABLE_MS Poll interval while waiting for textarea to finish loading (default: 400)
- *   TEXT_SYNC_STABLE_TICKS Value unchanged this many polls => stable (default: 4)
  *   COLLECTOR_SETTLE_MS  Extra wait after load so GDTM can inject #udip / #txId (default: 2000)
  *   RESULTS_FILE       Path to JSONL log (default: <project>/results/txids.jsonl)
  *   SKIP_RESULTS_FILE  Set to 1 to disable writing txId records
@@ -40,16 +36,10 @@ const PROJECT_ROOT = path.join(__dirname, '..');
 const COLLECTOR_URL =
   process.env.COLLECTOR_URL ||
   'https://gdtm-dev.globalsiteanalytics.com/kasm.html';
-const TEXT_SYNC_URL =
-  process.env.TEXT_SYNC_URL ||
-  'https://gdtm-dev.globalsiteanalytics.com/text.html';
 
 const HEADLESS =
   process.env.HEADLESS === '1' || process.env.HEADLESS === 'true';
 
-const TEXT_SYNC_DRAIN_MS = Number(process.env.TEXT_SYNC_DRAIN_MS || 3000);
-const TEXT_SYNC_STABLE_MS = Number(process.env.TEXT_SYNC_STABLE_MS || 400);
-const TEXT_SYNC_STABLE_TICKS = Number(process.env.TEXT_SYNC_STABLE_TICKS || 4);
 const COLLECTOR_SETTLE_MS = Number(process.env.COLLECTOR_SETTLE_MS || 2000);
 
 const PLAYWRIGHT_IGNORE_HTTPS_ERRORS = (() => {
@@ -141,30 +131,6 @@ function maybeAutoPushResults() {
       `Auto-push exited with code ${r.status}. Configure git remote and credentials, or set AUTO_PUSH_RESULTS=0.\n`,
     );
     if (!process.exitCode) process.exitCode = 1;
-  }
-}
-
-/**
- * Playwright may resolve inputValue() to undefined; String(undefined) is the literal word "undefined".
- * Some React stacks also briefly surface the literal strings "undefined" / "null" when empty.
- * @param {unknown} v
- */
-function normalizeSyncedText(v) {
-  if (v == null) return '';
-  const s = String(v);
-  if (s === 'undefined' || s === 'null') return '';
-  return s;
-}
-
-/**
- * @param {import('playwright').Locator} textarea
- */
-async function readTextareaValue(textarea) {
-  try {
-    const v = await textarea.inputValue();
-    return normalizeSyncedText(v);
-  } catch {
-    return '';
   }
 }
 
@@ -284,93 +250,6 @@ async function obtainKasmPayloadAndTx(page) {
 }
 
 /**
- * Wait until textarea#text stops changing (WebSocket / React often fills it after load).
- * @param {import('playwright').Page} page
- * @param {import('playwright').Locator} textarea
- */
-async function waitForStableTextareaValue(page, textarea) {
-  const maxWaitMs = 25000;
-  const start = Date.now();
-  let prev = await readTextareaValue(textarea);
-  let stableCount = 0;
-  while (Date.now() - start < maxWaitMs) {
-    await page.waitForTimeout(TEXT_SYNC_STABLE_MS);
-    const cur = await readTextareaValue(textarea);
-    if (cur === prev) {
-      stableCount += 1;
-      if (stableCount >= TEXT_SYNC_STABLE_TICKS) return cur;
-    } else {
-      stableCount = 0;
-      prev = cur;
-    }
-  }
-  return await readTextareaValue(textarea);
-}
-
-/**
- * @param {import('playwright').Page} page
- * @param {string} block
- */
-async function appendToSharedText(page, block) {
-  await page.goto(TEXT_SYNC_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-
-  // Shared sync page uses <textarea id="text">; avoid textarea.first() when multiple textareas exist.
-  const textarea = page.locator('textarea#text');
-  const hasTextarea = await textarea.count().then((c) => c > 0);
-
-  if (hasTextarea) {
-    await textarea.waitFor({ state: 'visible', timeout: 30000 });
-    const existing = normalizeSyncedText(
-      await waitForStableTextareaValue(page, textarea),
-    );
-    const next = existing + String(block ?? '');
-    await textarea.click();
-    // Locator.evaluate(fn, arg) calls fn(element, arg) — not fn(arg). First param is the textarea node.
-    await textarea.evaluate(
-      (el, { fullValue, appendedBlock }) => {
-        if (!el || !('value' in el)) return;
-        const proto = window.HTMLTextAreaElement.prototype;
-        const desc = Object.getOwnPropertyDescriptor(proto, 'value');
-        const v = fullValue == null ? '' : String(fullValue);
-        const app = appendedBlock == null ? '' : String(appendedBlock);
-        if (desc?.set) {
-          desc.set.call(el, v);
-        } else {
-          el.value = v;
-        }
-        // One input event: duplicate Event + InputEvent can confuse React and flash the literal "undefined".
-        try {
-          const opts =
-            app.length <= 8000
-              ? {
-                  bubbles: true,
-                  inputType: 'insertFromPaste',
-                  data: app,
-                }
-              : { bubbles: true, inputType: 'insertFromPaste' };
-          el.dispatchEvent(new InputEvent('input', opts));
-        } catch {
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-      },
-      { fullValue: next, appendedBlock: block },
-    );
-    await textarea.blur();
-    // Let the doc sync out before the next browser navigates away or context closes.
-    await page.waitForTimeout(TEXT_SYNC_DRAIN_MS);
-    return;
-  }
-
-  const editable = page.locator('[contenteditable="true"]').first();
-  await editable.waitFor({ state: 'visible', timeout: 30000 });
-  await editable.evaluate((el, append) => {
-    el.innerText = (el.innerText || '') + append;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  }, block);
-}
-
-/**
  * @param {import('playwright').Browser} browser
  * @param {string} displayName
  */
@@ -397,12 +276,7 @@ async function runOneBrowser(browser, displayName) {
     `Payload captured (${payload.length} chars), txId: ${txId || '(empty)'}\n`,
   );
 
-  const ua =
-    (await page.evaluate(() => navigator.userAgent).catch(() => '')) || '';
   const ts = new Date().toISOString();
-  const block = `\n--- BROWSER: ${String(displayName)} | engine: ${String(version || 'unknown')} | ${ts} ---\ntxId: ${String(txId || '')}\n${String(ua)}\n\n${String(payload)}\n`;
-
-  await appendToSharedText(page, block);
 
   currentRunTxRows.push({
     txId: txId || '',

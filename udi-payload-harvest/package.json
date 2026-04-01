@@ -2,7 +2,7 @@
   "name": "udi-payload-harvest",
   "version": "1.0.0",
   "private": true,
-  "description": "KASM/Ubuntu: collect UDI Collector payloads across browsers and append to shared text sync",
+  "description": "KASM/Ubuntu: collect UDI Collector payloads across browsers; write results/txids.jsonl",
   "type": "module",
   "scripts": {
     "collect": "node scripts/collect.mjs",

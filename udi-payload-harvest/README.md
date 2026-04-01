@@ -1,6 +1,6 @@
 # udi-payload-harvest
 
-Collect **UDI Collector** payloads from multiple browsers on **Ubuntu / KASM**, then **append** labeled blocks to the [shared text sync](https://gdtm-dev.globalsiteanalytics.com/text.html) page so you can read them from your local machine.
+Collect **UDI Collector** payloads from multiple browsers on **Ubuntu / KASM**, then write **`results/txids.jsonl`** (this run only) and optionally **push** to GitHub **`develop`** for downstream use.
 
 Companion docs:
 
@@ -61,10 +61,6 @@ npm run collect
 | Variable | Default |
 | -------- | ------- |
 | `COLLECTOR_URL` | `https://gdtm-dev.globalsiteanalytics.com/kasm.html` (reads **`#udip`** payload and **`#txId`**) |
-| `TEXT_SYNC_URL` | `https://gdtm-dev.globalsiteanalytics.com/text.html` |
-| `TEXT_SYNC_DRAIN_MS` | `3000` — wait after each append so WebSocket sync can flush before the browser closes |
-| `TEXT_SYNC_STABLE_MS` | `400` — poll interval while waiting for `#text` to finish loading from sync |
-| `TEXT_SYNC_STABLE_TICKS` | `4` — how many unchanged polls count as “stable” |
 | `COLLECTOR_SETTLE_MS` | `2000` — extra wait after `kasm.html` loads so GDTM can fill `#udip` / `#txId` |
 | `PLAYWRIGHT_IGNORE_HTTPS_ERRORS` | Default **on** (`1` / unset). Playwright passes **`ignoreHTTPSErrors`** on the browser context so TLS still works when a corporate proxy re-signs HTTPS (Firefox often shows **`SEC_ERROR_UNKNOWN_ISSUER`** without this). Set to **`0`** or **`false`** to require a valid certificate chain. |
 
@@ -80,13 +76,7 @@ HEADLESS=1 npm run collect
 
 1. For each browser: new context, open **[kasm.html](https://gdtm-dev.globalsiteanalytics.com/kasm.html)** (or `COLLECTOR_URL`).
 2. Wait for **`input#udip`** and **`input#txId`**, then poll until **`#udip`** has the payload (GDTM snippet fills these asynchronously).
-3. Open the shared text page, **append** to **`textarea#text`** (or **`contenteditable`** if that element is absent):
-
-   `--- BROWSER: <name> | engine: <version> | <ISO time> ---`  
-   `txId: …`  
-   User-Agent, blank line, then payload.
-
-4. After all browsers finish, **overwrite** [`results/txids.jsonl`](results/txids.jsonl) with **only this run’s** rows (JSON Lines — previous runs are not kept in the file).
+3. After all browsers finish, **overwrite** [`results/txids.jsonl`](results/txids.jsonl) with **only this run’s** rows (JSON Lines — previous runs are not kept in the file).
 
 ### `results/txids.jsonl` (JSONL)
 
@@ -162,21 +152,9 @@ This commits **`results/txids.jsonl`** and runs **`git push origin develop`**. F
 - The script no longer waits for **`networkidle`** (analytics/WebSockets often prevent it from ever finishing). It waits for **`load`**, then **`COLLECTOR_SETTLE_MS`**, then **`#udip` / `#txId` attached** (not only *visible*, so hidden inputs still count).
 - If it still stalls, confirm the IDs in DevTools; inputs inside a **same-origin iframe** are handled. **Cross-origin** iframes cannot be read from the parent page — run against a page that exposes fields on the top document or use a proxy host.
 
-**Sync page shows nothing (collector looked fine)**
-
-- Many real-time editors use **React** (controlled `<textarea>`). The script sets `#text` via the native `value` setter and dispatches `input` / `InputEvent` so sync libraries see updates; if yours still ignores it, record the framework and we can add a targeted hook.
-
-**Literal “undefined” when the sync box was empty**
-
-- Empty synced values are normalized (Playwright / React can otherwise surface the literal string `undefined`). A single `input` event is sent to avoid double React updates flashing junk before the real content.
-
 **Brave / Opera / Tor not found**
 
 - Set `BRAVE_PATH`, `OPERA_PATH`, or `TOR_BROWSER_PATH` to the real binary. Tor is often under `tor-browser/Browser/firefox` or a distro wrapper script.
-
-**Shared text does not update remotely**
-
-- The page may require **`input`/`change` events** on the field; the script dispatches them. If the app uses a different widget, adjust `appendToSharedText` in `scripts/collect.mjs`.
 
 **403 / corporate proxy**
 
@@ -184,7 +162,7 @@ This commits **`results/txids.jsonl`** and runs **`git push origin develop`**. F
 
 ## Security
 
-Payloads are sensitive. The shared text URL may be visible to others. Prefer short sessions, access control if available, or store artifacts only in approved secure storage (see Confluence draft).
+Payloads and `txId` values are sensitive. Store **`results/txids.jsonl`** and Git remotes only where your policy allows; rotate credentials if exposed (see Confluence draft).
 
 ## TestRail import
 
