@@ -306,7 +306,14 @@ async function appendToSharedText(page, block) {
  */
 async function runOneBrowser(browser, displayName) {
   const context = await browser.newContext();
-  await grantClipboard(context, [COLLECTOR_ORIGIN, TEXT_ORIGIN]);
+  // WebKit (Playwright) does not support clipboard-read/clipboard-write grants; granting can throw or break newPage().
+  if (browser.browserType().name() !== 'webkit') {
+    await grantClipboard(context, [COLLECTOR_ORIGIN, TEXT_ORIGIN]);
+  } else {
+    process.stderr.write(
+      'Note: WebKit — clipboard API permissions skipped; payload uses DOM / Copy + clipboard in-page only.\n',
+    );
+  }
 
   const page = await context.newPage();
   let version = '';
