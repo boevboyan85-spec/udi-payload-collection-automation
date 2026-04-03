@@ -7,6 +7,9 @@
  *   UDIBROWSERS       Comma list: chrome,chromium,firefox,brave,opera,tor,webkit (default: chrome,chromium,firefox,brave,tor)
  *   COLLECTOR_URL     Default: https://gdtm-dev.globalsiteanalytics.com/kasm.html (#udip payload, #txId)
  *   HEADLESS          1/true for headless (default: false — use headed on KASM)
+ *   CHROME_DESKTOP_FILE  Optional path to a Google Chrome **.desktop** file (e.g. Kasm:
+ *                     **`/home/kasm-user/Desktop/google-chrome.desktop`**). Parses **`[Desktop Entry]`** **`Exec=`**, strips field codes (`%U`, …), and launches that **binary** via Playwright (not the `.desktop`
+ *                     itself). When set, **`chrome`** in UDIBROWSERS uses this path instead of **`channel: 'chrome'`**.
  *   BRAVE_PATH        Executable for Brave (default: /usr/bin/brave-browser)
  *   OPERA_PATH        Executable for Opera (default: /usr/bin/opera)
  *   FIREFOX_PATH      Override Firefox binary
@@ -823,6 +826,112 @@ function resolveExecutable(name, defaults) {
   return defaults[0];
 }
 
+/**
+ * First argument of an Exec= line (quoted segments supported).
+ * @param {string} s
+ */
+function firstExecArgv0(s) {
+  const trimmed = s.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('"')) {
+    let out = '';
+    for (let i = 1; i < trimmed.length; i++) {
+      const c = trimmed[i];
+      if (c === '\\') {
+        i += 1;
+        out += trimmed[i] ?? '';
+        continue;
+      }
+      if (c === '"') break;
+      out += c;
+    }
+    return out;
+  }
+  if (trimmed.startsWith("'")) {
+    const end = trimmed.indexOf("'", 1);
+    return end === -1 ? trimmed.slice(1) : trimmed.slice(1, end);
+  }
+  return trimmed.split(/\s+/)[0] || '';
+}
+
+/**
+ * Strip `VAR=value` prefixes sometimes used before the real binary in Exec=.
+ * @param {string} s
+ */
+function stripExecEnvAssignments(s) {
+  let rest = s.trim();
+  for (;;) {
+    const m = /^([A-Za-z_][A-Za-z0-9_]*)=\S+\s+/.exec(rest);
+    if (!m) break;
+    rest = rest.slice(m[0].length);
+  }
+  return rest;
+}
+
+/**
+ * Resolve a Chrome binary token to an existing path (absolute or via `which`).
+ * @param {string} token
+ */
+function resolveChromeBinaryToken(token) {
+  if (!token) {
+    throw new Error('CHROME_DESKTOP_FILE: empty binary in Exec=');
+  }
+  if (path.isAbsolute(token)) {
+    if (fs.existsSync(token)) return token;
+    throw new Error(`CHROME_DESKTOP_FILE: Exec binary not found: ${token}`);
+  }
+  const w = spawnSync('which', [token], { encoding: 'utf8' });
+  if (w.status === 0 && w.stdout) {
+    const p = w.stdout.trim().split('\n')[0];
+    if (p && fs.existsSync(p)) return p;
+  }
+  throw new Error(
+    `CHROME_DESKTOP_FILE: Exec binary not in PATH or missing: ${token}`,
+  );
+}
+
+/**
+ * Read [Desktop Entry] Exec= from a .desktop file; return resolved Chrome executable path.
+ * @param {string} desktopPath
+ */
+function parseDesktopEntryChromeExec(desktopPath) {
+  const resolved = path.resolve(desktopPath.trim());
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`CHROME_DESKTOP_FILE not found: ${resolved}`);
+  }
+  const raw = fs.readFileSync(resolved, 'utf8');
+  let inDesktopEntry = false;
+  let execLine = '';
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('[')) {
+      inDesktopEntry = trimmed === '[Desktop Entry]';
+      continue;
+    }
+    if (!inDesktopEntry || !trimmed || trimmed.startsWith('#')) continue;
+    if (trimmed.startsWith('Exec=')) {
+      const eq = line.indexOf('=');
+      execLine = eq >= 0 ? line.slice(eq + 1) : '';
+      break;
+    }
+  }
+  if (!execLine) {
+    throw new Error(`No Exec= in [Desktop Entry] for ${resolved}`);
+  }
+  let s = execLine
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '\r')
+    .replace(/\\\\/g, '\\')
+    .replace(/\\s/g, ' ');
+  s = s.replace(/%%/g, '\u0000PCT\u0000');
+  s = s.replace(/%[a-zA-Z]/g, '');
+  s = s.replace(/\u0000PCT\u0000/g, '%');
+  s = stripExecEnvAssignments(s);
+  const bin = firstExecArgv0(s);
+  return resolveChromeBinaryToken(bin);
+}
+
 /** Heuristic: encrypted / encoded collector blobs are usually high alphanumeric ratio. */
 function looksLikePayload(s) {
   if (!s || s.length < 24) return false;
@@ -970,6 +1079,14 @@ async function launchBrowser(kind) {
   const opts = { headless: HEADLESS };
   switch (kind) {
     case 'chrome': {
+      const desktopFile = process.env.CHROME_DESKTOP_FILE;
+      if (desktopFile && String(desktopFile).trim()) {
+        const exe = parseDesktopEntryChromeExec(String(desktopFile));
+        process.stderr.write(
+          `[chrome] CHROME_DESKTOP_FILE → executablePath ${exe}\n`,
+        );
+        return chromium.launch({ ...opts, executablePath: exe });
+      }
       try {
         return await chromium.launch({ ...opts, channel: 'chrome' });
       } catch {
