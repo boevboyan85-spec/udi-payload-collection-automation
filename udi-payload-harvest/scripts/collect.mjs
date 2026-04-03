@@ -41,9 +41,15 @@
  *                                   for Firefox / Tor Browser (Docker/Kasm user-namespace EPERM). Set 0/false off.
  *   PLAYWRIGHT_AUTOMATION_MITIGATIONS  Default on (unset or 1/true) for **Chromium-family** Playwright runs only.
  *                                   Drops **`--enable-automation`**, adds **`--disable-blink-features=AutomationControlled`**,
- *                                   masks **`navigator.webdriver`** before page scripts run, and uses **`viewport: null`**
- *                                   when headed — reduces false “devtools open” / automation fingerprint signals for
- *                                   downstream evaluation of **txId** (not a full anti-detect guarantee). Set 0/false off.
+ *                                   **`--start-maximized`** when headed, masks **`navigator.webdriver`** before page scripts run,
+ *                                   and uses **`viewport: null`** when headed — reduces false “devtools open” / automation
+ *                                   fingerprint noise for downstream **txId** evaluation (not a full anti-detect guarantee).
+ *                                   Set 0/false off.
+ *   PLAYWRIGHT_CHROMIUM_USER_DATA_DIR  If set, Chromium-family collectors use **`launchPersistentContext`** with this
+ *                                   directory (created if missing) instead of an ephemeral context — closer to a normal
+ *                                   profile and often clears false **private/incognito** flags. Use a dedicated path, not
+ *                                   your interactive Chrome profile while Chrome is running (profile lock). Per-browser
+ *                                   default when **`PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE=1`**: **`~/.config/udi-payload-harvest/chromium-profile-<kind>`**.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -110,10 +116,190 @@ const PLAYWRIGHT_AUTOMATION_MITIGATIONS = (() => {
  */
 function chromiumAutomationLaunchOpts() {
   if (!PLAYWRIGHT_AUTOMATION_MITIGATIONS) return {};
+  const args = ['--disable-blink-features=AutomationControlled'];
+  if (!HEADLESS) args.push('--start-maximized');
   return {
     ignoreDefaultArgs: ['--enable-automation'],
-    args: ['--disable-blink-features=AutomationControlled'],
+    args,
   };
+}
+
+/**
+ * Persistent profile dir for Chromium when user opts in (see header).
+ * @param {string} kind
+ * @returns {string | null}
+ */
+function resolvedChromiumUserDataDir(kind) {
+  const explicit = process.env.PLAYWRIGHT_CHROMIUM_USER_DATA_DIR;
+  if (explicit != null && String(explicit).trim() !== '') {
+    return path.resolve(String(explicit).trim());
+  }
+  const flag = process.env.PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE;
+  if (flag === '1' || flag === 'true') {
+    return path.join(
+      os.homedir(),
+      '.config',
+      'udi-payload-harvest',
+      `chromium-profile-${kind}`,
+    );
+  }
+  return null;
+}
+
+/**
+ * @param {import('playwright').BrowserContext} context
+ */
+async function addChromiumMitigationInitScript(context) {
+  if (!PLAYWRIGHT_AUTOMATION_MITIGATIONS) return;
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', {
+      get: () => false,
+    });
+  });
+}
+
+/**
+ * @param {string} kind chrome|chromium|brave|opera
+ */
+async function launchChromiumBrowser(kind) {
+  const base = { headless: HEADLESS, ...chromiumAutomationLaunchOpts() };
+  switch (kind) {
+    case 'chrome': {
+      const desktopFile = process.env.CHROME_DESKTOP_FILE;
+      if (desktopFile && String(desktopFile).trim()) {
+        const exe = parseDesktopEntryChromeExec(String(desktopFile));
+        process.stderr.write(
+          `[chrome] CHROME_DESKTOP_FILE → executablePath ${exe}\n`,
+        );
+        return chromium.launch({ ...base, executablePath: exe });
+      }
+      try {
+        return await chromium.launch({ ...base, channel: 'chrome' });
+      } catch {
+        const exe = resolveExecutable('chrome', [
+          '/usr/bin/google-chrome-stable',
+          '/usr/bin/google-chrome',
+          '/opt/google/chrome/chrome',
+        ]);
+        return chromium.launch({ ...base, executablePath: exe });
+      }
+    }
+    case 'chromium':
+      return chromium.launch(base);
+    case 'brave': {
+      const exe = resolveExecutable('brave', [
+        '/usr/bin/brave-browser',
+        '/usr/bin/brave',
+        '/opt/brave.com/brave/brave-browser',
+      ]);
+      return chromium.launch({ ...base, executablePath: exe });
+    }
+    case 'opera': {
+      const exe = resolveExecutable('opera', [
+        '/usr/bin/opera',
+        '/usr/bin/opera-stable',
+      ]);
+      return chromium.launch({ ...base, executablePath: exe });
+    }
+    default:
+      throw new Error(`launchChromiumBrowser: unsupported kind ${kind}`);
+  }
+}
+
+/**
+ * @param {string} kind
+ * @param {string} userDataDir
+ */
+async function launchPersistentChromiumContext(kind, userDataDir) {
+  const base = { headless: HEADLESS, ...chromiumAutomationLaunchOpts() };
+  const contextOpts = {
+    ignoreHTTPSErrors: PLAYWRIGHT_IGNORE_HTTPS_ERRORS,
+  };
+  if (PLAYWRIGHT_AUTOMATION_MITIGATIONS && !HEADLESS) {
+    contextOpts.viewport = null;
+  }
+  let context;
+  switch (kind) {
+    case 'chrome': {
+      const desktopFile = process.env.CHROME_DESKTOP_FILE;
+      if (desktopFile && String(desktopFile).trim()) {
+        const exe = parseDesktopEntryChromeExec(String(desktopFile));
+        process.stderr.write(
+          `[chrome] CHROME_DESKTOP_FILE → executablePath ${exe}\n`,
+        );
+        context = await chromium.launchPersistentContext(userDataDir, {
+          ...base,
+          executablePath: exe,
+          ...contextOpts,
+        });
+        break;
+      }
+      try {
+        context = await chromium.launchPersistentContext(userDataDir, {
+          ...base,
+          channel: 'chrome',
+          ...contextOpts,
+        });
+      } catch {
+        const exe = resolveExecutable('chrome', [
+          '/usr/bin/google-chrome-stable',
+          '/usr/bin/google-chrome',
+          '/opt/google/chrome/chrome',
+        ]);
+        context = await chromium.launchPersistentContext(userDataDir, {
+          ...base,
+          executablePath: exe,
+          ...contextOpts,
+        });
+      }
+      break;
+    }
+    case 'chromium':
+      context = await chromium.launchPersistentContext(userDataDir, {
+        ...base,
+        ...contextOpts,
+      });
+      break;
+    case 'brave': {
+      const exe = resolveExecutable('brave', [
+        '/usr/bin/brave-browser',
+        '/usr/bin/brave',
+        '/opt/brave.com/brave/brave-browser',
+      ]);
+      context = await chromium.launchPersistentContext(userDataDir, {
+        ...base,
+        executablePath: exe,
+        ...contextOpts,
+      });
+      break;
+    }
+    case 'opera': {
+      const exe = resolveExecutable('opera', [
+        '/usr/bin/opera',
+        '/usr/bin/opera-stable',
+      ]);
+      context = await chromium.launchPersistentContext(userDataDir, {
+        ...base,
+        executablePath: exe,
+        ...contextOpts,
+      });
+      break;
+    }
+    default:
+      throw new Error(`launchPersistentChromiumContext: unsupported kind ${kind}`);
+  }
+  await addChromiumMitigationInitScript(context);
+  return context;
+}
+
+/**
+ * @param {import('playwright').BrowserContext} context
+ * @param {string} displayName
+ */
+async function runChromiumCollectorWithPersistentContext(context, displayName) {
+  const browser = context.browser();
+  const page = context.pages()[0] ?? (await context.newPage());
+  await runCollectorInPage(page, browser, displayName);
 }
 
 /** Env vars read at Firefox/Tor process start (before Juggler / protocol prefs). */
@@ -1053,13 +1239,13 @@ async function obtainKasmPayloadAndTx(page) {
 
 /**
  * @param {import('playwright').Page} page
- * @param {import('playwright').Browser} browser
+ * @param {import('playwright').Browser | null} browser
  * @param {string} displayName
  */
 async function runCollectorInPage(page, browser, displayName) {
   let version = '';
   try {
-    version = await browser.version();
+    version = browser ? await browser.version() : 'unknown';
   } catch {
     version = 'unknown';
   }
@@ -1101,13 +1287,7 @@ async function runOneBrowser(browser, displayName) {
     contextOpts.viewport = null;
   }
   const context = await browser.newContext(contextOpts);
-  if (PLAYWRIGHT_AUTOMATION_MITIGATIONS && isChromium) {
-    await context.addInitScript(() => {
-      Object.defineProperty(navigator, 'webdriver', {
-        get: () => false,
-      });
-    });
-  }
+  if (isChromium) await addChromiumMitigationInitScript(context);
   const page = await context.newPage();
   try {
     await runCollectorInPage(page, browser, displayName);
@@ -1117,46 +1297,13 @@ async function runOneBrowser(browser, displayName) {
 }
 
 async function launchBrowser(kind) {
-  const chromiumOpts = { headless: HEADLESS, ...chromiumAutomationLaunchOpts() };
   const nonChromiumOpts = { headless: HEADLESS };
   switch (kind) {
-    case 'chrome': {
-      const desktopFile = process.env.CHROME_DESKTOP_FILE;
-      if (desktopFile && String(desktopFile).trim()) {
-        const exe = parseDesktopEntryChromeExec(String(desktopFile));
-        process.stderr.write(
-          `[chrome] CHROME_DESKTOP_FILE → executablePath ${exe}\n`,
-        );
-        return chromium.launch({ ...chromiumOpts, executablePath: exe });
-      }
-      try {
-        return await chromium.launch({ ...chromiumOpts, channel: 'chrome' });
-      } catch {
-        const exe = resolveExecutable('chrome', [
-          '/usr/bin/google-chrome-stable',
-          '/usr/bin/google-chrome',
-          '/opt/google/chrome/chrome',
-        ]);
-        return chromium.launch({ ...chromiumOpts, executablePath: exe });
-      }
-    }
+    case 'chrome':
     case 'chromium':
-      return chromium.launch(chromiumOpts);
-    case 'brave': {
-      const exe = resolveExecutable('brave', [
-        '/usr/bin/brave-browser',
-        '/usr/bin/brave',
-        '/opt/brave.com/brave/brave-browser',
-      ]);
-      return chromium.launch({ ...chromiumOpts, executablePath: exe });
-    }
-    case 'opera': {
-      const exe = resolveExecutable('opera', [
-        '/usr/bin/opera',
-        '/usr/bin/opera-stable',
-      ]);
-      return chromium.launch({ ...chromiumOpts, executablePath: exe });
-    }
+    case 'brave':
+    case 'opera':
+      return launchChromiumBrowser(kind);
     case 'firefox': {
       const exe = process.env.FIREFOX_PATH || undefined;
       return firefox.launch(
@@ -1205,6 +1352,34 @@ async function main() {
       } catch (e) {
         failures.push({ kind, phase: 'run', error: e });
         process.stderr.write(`Tor (Selenium) failed: ${e?.message || e}\n`);
+      }
+      continue;
+    }
+
+    const chromiumKinds = new Set(['chrome', 'chromium', 'brave', 'opera']);
+    const userDataDir = chromiumKinds.has(kind)
+      ? resolvedChromiumUserDataDir(kind)
+      : null;
+
+    if (userDataDir) {
+      try {
+        fs.mkdirSync(userDataDir, { recursive: true });
+        process.stderr.write(
+          `[playwright] persistent Chromium userDataDir ${userDataDir}\n`,
+        );
+        const context = await launchPersistentChromiumContext(kind, userDataDir);
+        try {
+          await runChromiumCollectorWithPersistentContext(context, label);
+          process.stderr.write(`OK: ${label}\n`);
+        } catch (e) {
+          failures.push({ kind, phase: 'run', error: e });
+          process.stderr.write(`Run failed: ${e?.message || e}\n`);
+        } finally {
+          await context.close().catch(() => {});
+        }
+      } catch (e) {
+        failures.push({ kind, phase: 'launch', error: e });
+        process.stderr.write(`Launch failed: ${e?.message || e}\n`);
       }
       continue;
     }
