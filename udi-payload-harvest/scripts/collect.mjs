@@ -41,10 +41,15 @@
  *                                   for Firefox / Tor Browser (Docker/Kasm user-namespace EPERM). Set 0/false off.
  *   PLAYWRIGHT_AUTOMATION_MITIGATIONS  Default on (unset or 1/true) for **Chromium-family** Playwright runs only.
  *                                   Drops **`--enable-automation`**, adds **`--disable-blink-features=AutomationControlled`**,
- *                                   **`--start-maximized`** when headed, masks **`navigator.webdriver`** before page scripts run,
- *                                   and uses **`viewport: null`** when headed — reduces false “devtools open” / automation
- *                                   fingerprint noise for downstream **txId** evaluation (not a full anti-detect guarantee).
- *                                   Set 0/false off.
+ *                                   **`--start-maximized`** when headed, and uses **`viewport: null`** when headed — reduces
+ *                                   some automation / “devtools” heuristics (not a full anti-detect guarantee). Set 0/false off.
+ *   PLAYWRIGHT_MASK_NAVIGATOR_WEBDRIVER  Default **off**. If 1/true, injects **`navigator.webdriver` → false** before page
+ *                                   scripts — can flip “bot by web driver” but often triggers **“Override properties”** /
+ *                                   **“Navigator own properties”** on strict fingerprint backends; leave off unless you need it.
+ *   PLAYWRIGHT_LOCALE  Playwright **`locale`** (e.g. **`en-US`**). Aligns **`navigator.language` / languages** with default
+ *                                   **`Accept-Language`**. If unset, **`LANG`** is parsed when it looks like **`en_US.UTF-8`**.
+ *   PLAYWRIGHT_TIMEZONE_ID  IANA zone for Playwright **`timezoneId`** (e.g. **`America/New_York`** when IP geolocation is US).
+ *                                   Reduces “time zone mismatch vs IP” when the session TZ differs from the egress IP region.
  *   PLAYWRIGHT_CHROMIUM_USER_DATA_DIR  If set, Chromium-family collectors use **`launchPersistentContext`** with this
  *                                   directory (created if missing) instead of an ephemeral context — closer to a normal
  *                                   profile and often clears false **private/incognito** flags. Use a dedicated path, not
@@ -110,6 +115,47 @@ const PLAYWRIGHT_AUTOMATION_MITIGATIONS = (() => {
   return true;
 })();
 
+/** Off by default — patching `navigator.webdriver` trips “override / own properties” on some risk engines. */
+const PLAYWRIGHT_MASK_NAVIGATOR_WEBDRIVER = (() => {
+  const v = process.env.PLAYWRIGHT_MASK_NAVIGATOR_WEBDRIVER;
+  if (v === '1' || v === 'true') return true;
+  return false;
+})();
+
+function trimEnv(name) {
+  const v = process.env[name];
+  if (v == null || String(v).trim() === '') return undefined;
+  return String(v).trim();
+}
+
+/** Map `LANG` like `en_US.UTF-8` → Playwright `en-US` when PLAYWRIGHT_LOCALE is unset. */
+function inferredLocaleFromLang() {
+  const lang = process.env.LANG || '';
+  const m = /^([a-z]{2})(?:_([A-Z]{2}))?/i.exec(lang);
+  if (!m) return undefined;
+  if (!m[2]) return undefined;
+  return `${m[1].toLowerCase()}-${m[2].toUpperCase()}`;
+}
+
+/**
+ * Locale / timezone for Playwright contexts — fixes Accept-Language vs `navigator.languages` and IP vs browser TZ drift.
+ * @returns {import('playwright').BrowserContextOptions}
+ */
+function playwrightContextLocaleOpts() {
+  const out = /** @type {import('playwright').BrowserContextOptions} */ ({});
+  const locale = trimEnv('PLAYWRIGHT_LOCALE') || inferredLocaleFromLang();
+  const tz = trimEnv('PLAYWRIGHT_TIMEZONE_ID');
+  if (locale) out.locale = locale;
+  if (tz) out.timezoneId = tz;
+  const acceptOverride = trimEnv('PLAYWRIGHT_ACCEPT_LANGUAGE');
+  if (acceptOverride) {
+    out.extraHTTPHeaders = {
+      'Accept-Language': acceptOverride,
+    };
+  }
+  return out;
+}
+
 /**
  * Extra Chromium launch options to lower automation/devtools-style fingerprint noise.
  * @returns {import('playwright').LaunchOptions}
@@ -150,7 +196,9 @@ function resolvedChromiumUserDataDir(kind) {
  * @param {import('playwright').BrowserContext} context
  */
 async function addChromiumMitigationInitScript(context) {
-  if (!PLAYWRIGHT_AUTOMATION_MITIGATIONS) return;
+  if (!PLAYWRIGHT_AUTOMATION_MITIGATIONS || !PLAYWRIGHT_MASK_NAVIGATOR_WEBDRIVER) {
+    return;
+  }
   await context.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver', {
       get: () => false,
@@ -214,6 +262,7 @@ async function launchPersistentChromiumContext(kind, userDataDir) {
   const base = { headless: HEADLESS, ...chromiumAutomationLaunchOpts() };
   const contextOpts = {
     ignoreHTTPSErrors: PLAYWRIGHT_IGNORE_HTTPS_ERRORS,
+    ...playwrightContextLocaleOpts(),
   };
   if (PLAYWRIGHT_AUTOMATION_MITIGATIONS && !HEADLESS) {
     contextOpts.viewport = null;
@@ -1278,6 +1327,7 @@ async function runOneBrowser(browser, displayName) {
   const isChromium = browser.browserType().name() === 'chromium';
   const contextOpts = {
     ignoreHTTPSErrors: PLAYWRIGHT_IGNORE_HTTPS_ERRORS,
+    ...playwrightContextLocaleOpts(),
   };
   if (
     PLAYWRIGHT_AUTOMATION_MITIGATIONS &&
