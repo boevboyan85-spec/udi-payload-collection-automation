@@ -39,6 +39,11 @@
  *                                   often causes SEC_ERROR_UNKNOWN_ISSUER without this.
  *   PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX  Default on (unset or 1/true). Sets several MOZ_DISABLE_* env vars
  *                                   for Firefox / Tor Browser (Docker/Kasm user-namespace EPERM). Set 0/false off.
+ *   PLAYWRIGHT_AUTOMATION_MITIGATIONS  Default on (unset or 1/true) for **Chromium-family** Playwright runs only.
+ *                                   Drops **`--enable-automation`**, adds **`--disable-blink-features=AutomationControlled`**,
+ *                                   masks **`navigator.webdriver`** before page scripts run, and uses **`viewport: null`**
+ *                                   when headed — reduces false “devtools open” / automation fingerprint signals for
+ *                                   downstream evaluation of **txId** (not a full anti-detect guarantee). Set 0/false off.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -90,6 +95,26 @@ const PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX = (() => {
   if (v === '1' || v === 'true') return true;
   return true;
 })();
+
+/** Reduce obvious Playwright/Chromium automation signals (see header: PLAYWRIGHT_AUTOMATION_MITIGATIONS). */
+const PLAYWRIGHT_AUTOMATION_MITIGATIONS = (() => {
+  const v = process.env.PLAYWRIGHT_AUTOMATION_MITIGATIONS;
+  if (v === '0' || v === 'false') return false;
+  if (v === '1' || v === 'true') return true;
+  return true;
+})();
+
+/**
+ * Extra Chromium launch options to lower automation/devtools-style fingerprint noise.
+ * @returns {import('playwright').LaunchOptions}
+ */
+function chromiumAutomationLaunchOpts() {
+  if (!PLAYWRIGHT_AUTOMATION_MITIGATIONS) return {};
+  return {
+    ignoreDefaultArgs: ['--enable-automation'],
+    args: ['--disable-blink-features=AutomationControlled'],
+  };
+}
 
 /** Env vars read at Firefox/Tor process start (before Juggler / protocol prefs). */
 const MOZ_SANDBOX_ENV_DISABLE = {
@@ -1064,9 +1089,25 @@ async function runCollectorInPage(page, browser, displayName) {
  * @param {string} displayName
  */
 async function runOneBrowser(browser, displayName) {
-  const context = await browser.newContext({
+  const isChromium = browser.browserType().name() === 'chromium';
+  const contextOpts = {
     ignoreHTTPSErrors: PLAYWRIGHT_IGNORE_HTTPS_ERRORS,
-  });
+  };
+  if (
+    PLAYWRIGHT_AUTOMATION_MITIGATIONS &&
+    isChromium &&
+    !HEADLESS
+  ) {
+    contextOpts.viewport = null;
+  }
+  const context = await browser.newContext(contextOpts);
+  if (PLAYWRIGHT_AUTOMATION_MITIGATIONS && isChromium) {
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false,
+      });
+    });
+  }
   const page = await context.newPage();
   try {
     await runCollectorInPage(page, browser, displayName);
@@ -1076,7 +1117,8 @@ async function runOneBrowser(browser, displayName) {
 }
 
 async function launchBrowser(kind) {
-  const opts = { headless: HEADLESS };
+  const chromiumOpts = { headless: HEADLESS, ...chromiumAutomationLaunchOpts() };
+  const nonChromiumOpts = { headless: HEADLESS };
   switch (kind) {
     case 'chrome': {
       const desktopFile = process.env.CHROME_DESKTOP_FILE;
@@ -1085,46 +1127,50 @@ async function launchBrowser(kind) {
         process.stderr.write(
           `[chrome] CHROME_DESKTOP_FILE → executablePath ${exe}\n`,
         );
-        return chromium.launch({ ...opts, executablePath: exe });
+        return chromium.launch({ ...chromiumOpts, executablePath: exe });
       }
       try {
-        return await chromium.launch({ ...opts, channel: 'chrome' });
+        return await chromium.launch({ ...chromiumOpts, channel: 'chrome' });
       } catch {
         const exe = resolveExecutable('chrome', [
           '/usr/bin/google-chrome-stable',
           '/usr/bin/google-chrome',
           '/opt/google/chrome/chrome',
         ]);
-        return chromium.launch({ ...opts, executablePath: exe });
+        return chromium.launch({ ...chromiumOpts, executablePath: exe });
       }
     }
     case 'chromium':
-      return chromium.launch(opts);
+      return chromium.launch(chromiumOpts);
     case 'brave': {
       const exe = resolveExecutable('brave', [
         '/usr/bin/brave-browser',
         '/usr/bin/brave',
         '/opt/brave.com/brave/brave-browser',
       ]);
-      return chromium.launch({ ...opts, executablePath: exe });
+      return chromium.launch({ ...chromiumOpts, executablePath: exe });
     }
     case 'opera': {
       const exe = resolveExecutable('opera', [
         '/usr/bin/opera',
         '/usr/bin/opera-stable',
       ]);
-      return chromium.launch({ ...opts, executablePath: exe });
+      return chromium.launch({ ...chromiumOpts, executablePath: exe });
     }
     case 'firefox': {
       const exe = process.env.FIREFOX_PATH || undefined;
       return firefox.launch(
-        firefoxLaunchOptions(exe ? { ...opts, executablePath: exe } : opts),
+        firefoxLaunchOptions(
+          exe
+            ? { ...nonChromiumOpts, executablePath: exe }
+            : nonChromiumOpts,
+        ),
       );
     }
     case 'tor':
       throw new Error('Tor uses runTorSelenium() — not launchBrowser(tor)');
     case 'webkit':
-      return webkit.launch(opts);
+      return webkit.launch(nonChromiumOpts);
     default:
       throw new Error(`Unknown browser kind: ${kind}`);
   }
