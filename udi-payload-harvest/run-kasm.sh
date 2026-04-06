@@ -24,8 +24,8 @@ fi
 echo "Installing browser binaries for Playwright (chromium, firefox, webkit)..."
 npx playwright install chromium firefox webkit
 
-: "${UDIBROWSERS:=chrome,chromium,firefox,brave,tor}"
-export UDIBROWSERS
+# UDIBROWSERS: omit to use project collect.env / collect.mjs defaults (chrome,chromium,firefox,tor,brave).
+[[ -n "${UDIBROWSERS+x}" ]] && export UDIBROWSERS
 # Corp TLS inspection: Playwright Firefox does not use the OS CA store by default.
 : "${PLAYWRIGHT_IGNORE_HTTPS_ERRORS:=1}"
 export PLAYWRIGHT_IGNORE_HTTPS_ERRORS
@@ -49,6 +49,6 @@ if [[ -z "${TOR_BROWSER_PATH:-}" ]]; then
   done
   shopt -u nullglob
 fi
-echo "UDIBROWSERS=$UDIBROWSERS"
+echo "UDIBROWSERS=${UDIBROWSERS:-'(unset — collect.env or collect.mjs default)'}"
 echo "Running collector (headed unless HEADLESS=1)..."
 npm run collect

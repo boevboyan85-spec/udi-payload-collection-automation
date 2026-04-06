@@ -4,10 +4,15 @@
  * then records rows to results/txids.jsonl (and optional git push).
  *
  * Env:
- *   UDIBROWSERS       Comma list: chrome,chromium,firefox,brave,opera,tor,webkit (default: chrome,chromium,firefox,brave,tor)
+ *   collect.env       Optional project file (see **`collect.env.example`**). Loaded before other env reads; keys already
+ *                     set in the process environment are **not** overwritten. Override path: **`UDI_COLLECT_ENV`** (absolute
+ *                     or relative to project root).
+ *   UDIBROWSERS       Comma list: chrome,chromium,firefox,brave,opera,tor,webkit (default: chrome,chromium,firefox,tor,brave)
  *   COLLECTOR_URL     Default: https://gdtm-dev.globalsiteanalytics.com/kasm.html (#udip payload, #txId)
  *   HEADLESS          1/true for headless (default: false — use headed on KASM)
- *   CHROME_SIMULATE_REAL_USER  Default **on** (unset or 1/true). When **on**, **`chrome`** may use
+ *   DISABLE_PLUGINS   Default **off** (unset or 0/false). When **on** (1/true), non-stealth **`chrome`** injects empty
+ *                     **`navigator.plugins` / `mimeTypes`** (see **`CHROME_SIMULATE_REAL_USER`**). Ignored for stealth Chrome.
+ *   CHROME_SIMULATE_REAL_USER  Default **off** (unset or 0/false). When **on** (1/true), **`chrome`** may use
  *                     **`CHROME_DESKTOP_FILE`** (if set) and the same Chromium stealth options as
  *                     **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** for that browser. When **off** (0/false),
  *                     **`chrome`** ignores **`CHROME_DESKTOP_FILE`**, launches via **`channel: 'chrome'`** (or path
@@ -23,9 +28,8 @@
  *                     **`--enable-automation`**. (Skipped when **`HEADLESS`** is on — no UI infobar then.)
  *                     Non-stealth **`chrome`** also passes **`--disable-extensions`** (Playwright’s default too) for a minimal
  *                     extension surface; stealth **`chrome`** strips that default so the launch can align with interactive Chrome.
- *                     Non-stealth **`chrome`** injects an init script so **`navigator.plugins`** / **`navigator.mimeTypes`** report
- *                     length **0** (built-in PDF entries are otherwise still visible to page scripts), and tries
- *                     **`navigator.pdfViewerEnabled` → false** when the property is configurable.
+ *                     When **`DISABLE_PLUGINS=1`**, non-stealth **`chrome`** injects empty **`navigator.plugins`** /
+ *                     **`navigator.mimeTypes`** (and tries **`pdfViewerEnabled` → false** when configurable).
  *   CHROME_DESKTOP_FILE  Optional path to a Google Chrome **.desktop** file (e.g. Kasm:
  *                     **`/home/kasm-user/Desktop/google-chrome.desktop`**). Parses **`[Desktop Entry]`** **`Exec=`**, strips field codes (`%U`, …), and launches that **binary** via Playwright (not the `.desktop`
  *                     itself). Used only when **`CHROME_SIMULATE_REAL_USER`** is on; when set, **`chrome`** in UDIBROWSERS uses this path instead of **`channel: 'chrome'`**.
@@ -90,6 +94,46 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '..');
 
+/**
+ * Load `collect.env` (or `UDI_COLLECT_ENV`) into `process.env` without overriding existing variables.
+ * @param {string} rootDir
+ */
+function loadCollectEnvFile(rootDir) {
+  const rawPath = process.env.UDI_COLLECT_ENV?.trim();
+  const envPath = rawPath
+    ? path.isAbsolute(rawPath)
+      ? rawPath
+      : path.join(rootDir, rawPath)
+    : path.join(rootDir, 'collect.env');
+  if (!fs.existsSync(envPath)) return;
+  let text;
+  try {
+    text = fs.readFileSync(envPath, 'utf8');
+  } catch {
+    return;
+  }
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    let val = trimmed.slice(eq + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = val;
+    }
+  }
+}
+
+loadCollectEnvFile(PROJECT_ROOT);
+
 const COLLECTOR_URL =
   process.env.COLLECTOR_URL ||
   'https://gdtm-dev.globalsiteanalytics.com/kasm.html';
@@ -136,13 +180,21 @@ const PLAYWRIGHT_AUTOMATION_MITIGATIONS = (() => {
 
 /**
  * Desktop-style Chrome launch + stealth bundle for **`chrome`** only (see header: CHROME_SIMULATE_REAL_USER).
- * Default on so existing Kasm setups keep current behavior.
+ * Default **off**; set **`1`/`true`** or use **`collect.env`** for Kasm-style stealth.
  */
 const CHROME_SIMULATE_REAL_USER = (() => {
   const v = process.env.CHROME_SIMULATE_REAL_USER;
   if (v === '0' || v === 'false') return false;
   if (v === '1' || v === 'true') return true;
-  return true;
+  return false;
+})();
+
+/** When true, non-stealth Chrome masks `navigator.plugins` / `mimeTypes` (see header: DISABLE_PLUGINS). */
+const DISABLE_PLUGINS = (() => {
+  const v = process.env.DISABLE_PLUGINS;
+  if (v === '1' || v === 'true') return true;
+  if (v === '0' || v === 'false') return false;
+  return false;
 })();
 
 /**
@@ -297,7 +349,13 @@ async function addChromiumMitigationInitScript(context, kind) {
  * @param {string} kind
  */
 async function addChromeNonStealthEmptyPluginsInitScript(context, kind) {
-  if (kind !== 'chrome' || chromiumEffectiveMitigations(kind)) return;
+  if (
+    !DISABLE_PLUGINS ||
+    kind !== 'chrome' ||
+    chromiumEffectiveMitigations(kind)
+  ) {
+    return;
+  }
   await context.addInitScript(() => {
     function buildEmptyPluginArray() {
       const PA = typeof PluginArray !== 'undefined' ? PluginArray : null;
@@ -1093,8 +1151,8 @@ const DEFAULT_BROWSERS = [
   'chrome',
   'chromium',
   'firefox',
-  'brave',
   'tor',
+  'brave',
 ];
 
 /** Rows collected in the current `npm run collect` only (replaces file on each run). */

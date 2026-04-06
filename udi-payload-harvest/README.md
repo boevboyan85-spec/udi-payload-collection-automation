@@ -38,7 +38,9 @@ npm run collect
 
 ## Configure browsers
 
-Comma-separated list in **`UDIBROWSERS`** (default: `chrome,chromium,firefox,brave,tor`):
+Optional **`collect.env`** in the project root (copy from **`collect.env.example`**) sets **`UDIBROWSERS`**, **`CHROME_SIMULATE_REAL_USER`**, **`DISABLE_PLUGINS`**, etc. Variables already set in the environment are **not** overwritten. Override the file path with **`UDI_COLLECT_ENV`**. **`run-kasm.sh`** no longer forces **`UDIBROWSERS`** so the file can apply; export **`UDIBROWSERS`** in the shell if you need to override **`collect.env`**.
+
+Comma-separated list in **`UDIBROWSERS`** (default: `chrome,chromium,firefox,tor,brave`):
 
 | Token | Behavior |
 | ----- | -------- |
