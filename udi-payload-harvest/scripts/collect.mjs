@@ -13,7 +13,9 @@
  *                     **`chrome`** ignores **`CHROME_DESKTOP_FILE`**, launches via **`channel: 'chrome'`** (or path
  *                     fallback), and does **not** apply those mitigations — automation UI / **`--enable-automation`**
  *                     behave like stock Playwright. **`chromium`**, **`brave`**, **`opera`** are unchanged (still follow
- *                     **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** only).
+ *                     **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** only). Playwright also defaults to **`--disable-infobars`**,
+ *                     which hides the yellow automation bar; for **`chrome`**, that switch is removed when this flag is off
+ *                     or when **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** is off so the infobar can show.
  *   CHROME_DESKTOP_FILE  Optional path to a Google Chrome **.desktop** file (e.g. Kasm:
  *                     **`/home/kasm-user/Desktop/google-chrome.desktop`**). Parses **`[Desktop Entry]`** **`Exec=`**, strips field codes (`%U`, …), and launches that **binary** via Playwright (not the `.desktop`
  *                     itself). Used only when **`CHROME_SIMULATE_REAL_USER`** is on; when set, **`chrome`** in UDIBROWSERS uses this path instead of **`channel: 'chrome'`**.
@@ -189,13 +191,28 @@ function playwrightContextLocaleOpts() {
  * @returns {import('playwright').LaunchOptions}
  */
 function chromiumAutomationLaunchOpts(kind) {
-  if (!chromiumEffectiveMitigations(kind)) return {};
-  const args = ['--disable-blink-features=AutomationControlled'];
-  if (!HEADLESS) args.push('--start-maximized');
-  return {
-    ignoreDefaultArgs: ['--enable-automation'],
-    args,
-  };
+  /** @type {import('playwright').LaunchOptions} */
+  const out = {};
+  if (chromiumEffectiveMitigations(kind)) {
+    const args = ['--disable-blink-features=AutomationControlled'];
+    if (!HEADLESS) args.push('--start-maximized');
+    out.ignoreDefaultArgs = ['--enable-automation'];
+    out.args = args;
+  }
+  // Playwright’s default Chromium args always include --disable-infobars (see playwright-core chromiumSwitches),
+  // which suppresses the “controlled by automated test software” infobar even when --enable-automation is present.
+  const chromeShowAutomationInfobar =
+    kind === 'chrome' &&
+    (!CHROME_SIMULATE_REAL_USER || !PLAYWRIGHT_AUTOMATION_MITIGATIONS);
+  if (chromeShowAutomationInfobar) {
+    const strip = ['--disable-infobars'];
+    if (Array.isArray(out.ignoreDefaultArgs)) {
+      out.ignoreDefaultArgs = [...out.ignoreDefaultArgs, ...strip];
+    } else {
+      out.ignoreDefaultArgs = strip;
+    }
+  }
+  return out;
 }
 
 /**
