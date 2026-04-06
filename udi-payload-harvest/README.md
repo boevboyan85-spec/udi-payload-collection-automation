@@ -78,11 +78,15 @@ npm run collect
 
 ## Headless
 
+**Google Chrome** and all other **Playwright** browsers (Chromium, Brave, Opera, Firefox, WebKit) honor **`HEADLESS=1`** or **`HEADLESS=true`**. **Tor** uses Selenium with **`-headless`** when **`HEADLESS`** is set the same way.
+
 Headless changes automation/fingerprint signals. Prefer headed on KASM.
 
 ```bash
 HEADLESS=1 npm run collect
 ```
+
+Or set **`HEADLESS=1`** in **`collect.env`** (see **`collect.env.example`**).
 
 ## How collection works
 

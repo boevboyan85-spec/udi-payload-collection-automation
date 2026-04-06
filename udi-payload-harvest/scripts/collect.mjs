@@ -9,7 +9,8 @@
  *                     or relative to project root).
  *   UDIBROWSERS       Comma list: chrome,chromium,firefox,brave,opera,tor,webkit (default: chrome,chromium,firefox,tor,brave)
  *   COLLECTOR_URL     Default: https://gdtm-dev.globalsiteanalytics.com/kasm.html (#udip payload, #txId)
- *   HEADLESS          1/true for headless (default: false — use headed on KASM)
+ *   HEADLESS          1/true for headless (default: false — use headed on KASM). Applies to **Chrome** and all Playwright
+ *                     browsers; **Tor** (Selenium) uses Firefox **`-headless`** when set.
  *   DISABLE_PLUGINS   Default **off** (unset or 0/false). When **on** (1/true), non-stealth **`chrome`** injects empty
  *                     **`navigator.plugins` / `mimeTypes`** (see **`CHROME_SIMULATE_REAL_USER`**). Ignored for stealth Chrome.
  *   CHROME_SIMULATE_REAL_USER  Default **off** (unset or 0/false). When **on** (1/true), **`chrome`** may use
