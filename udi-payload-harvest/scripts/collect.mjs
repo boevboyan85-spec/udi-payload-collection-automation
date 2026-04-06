@@ -13,6 +13,10 @@
  *   COLLECTOR_URL     Default: https://gdtm-dev.globalsiteanalytics.com/kasm.html (#udip payload, #txId)
  *   HEADLESS          1/true for headless (default: false — use headed on KASM). Applies to **Chrome** and all Playwright
  *                     browsers; **Tor** (Selenium) uses Firefox **`-headless`** when set.
+ *   HEADLESS_CHROMIUM_MODE  When **`HEADLESS`** is on, Chromium-family launches use Playwright’s default **`--headless`**
+ *                     (Chrome ≥112 maps this to **new** headless). Set **`old`** or **`legacy`** to strip that flag and pass
+ *                     **`--headless=old`** instead (classic headless stack / different UA & fingerprint surface). Any other
+ *                     value leaves Playwright’s default unchanged. Applies to **chrome**, **chromium**, **brave**, **opera**.
  *   DISABLE_PLUGINS   Default **off** (unset or 0/false). When **on** (1/true), non-stealth **`chrome`** injects empty
  *                     **`navigator.plugins` / `mimeTypes`** (see **`CHROME_SIMULATE_REAL_USER`**). Ignored for stealth Chrome.
  *   CHROME_SIMULATE_REAL_USER  Default **off** (unset or 0/false). When **on** (1/true), **`chrome`** may use
@@ -291,7 +295,28 @@ function chromiumAutomationLaunchOpts(kind) {
       out.ignoreDefaultArgs = strip;
     }
   }
+  applyChromiumLegacyHeadlessArgs(out);
   return out;
+}
+
+/**
+ * Chrome’s default **`--headless`** is the “new” headless path; use **`--headless=old`** for the legacy implementation.
+ * @param {import('playwright').LaunchOptions} out
+ */
+function applyChromiumLegacyHeadlessArgs(out) {
+  if (!HEADLESS) return;
+  const mode = (trimEnv('HEADLESS_CHROMIUM_MODE') || '').toLowerCase();
+  if (mode !== 'old' && mode !== 'legacy') return;
+  const stripHeadless = ['--headless'];
+  if (Array.isArray(out.ignoreDefaultArgs)) {
+    if (!out.ignoreDefaultArgs.includes('--headless')) {
+      out.ignoreDefaultArgs = [...out.ignoreDefaultArgs, ...stripHeadless];
+    }
+  } else {
+    out.ignoreDefaultArgs = stripHeadless;
+  }
+  const legacy = ['--headless=old'];
+  out.args = out.args ? [...out.args, ...legacy] : legacy;
 }
 
 /**
