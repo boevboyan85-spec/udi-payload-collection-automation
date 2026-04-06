@@ -4,9 +4,11 @@
  * then records rows to results/txids.jsonl (and optional git push).
  *
  * Env:
- *   collect.env       Optional project file (see **`collect.env.example`**). Loaded before other env reads; keys already
- *                     set in the process environment are **not** overwritten. Override path: **`UDI_COLLECT_ENV`** (absolute
- *                     or relative to project root).
+ *   collect.env       Optional project file (see **`collect.env.example`**). Loaded before other env reads. By default,
+ *                     each **`KEY=value`** in the file **overwrites** the same key in **`process.env`** (so **`UDIBROWSERS`**
+ *                     in the file wins over a narrow value exported from the shell or CI). Set **`UDI_COLLECT_ENV_OVERRIDE=0`**
+ *                     for legacy behavior: only fill variables that are **unset** in the environment. Path: **`UDI_COLLECT_ENV`**
+ *                     (absolute or relative to project root).
  *   UDIBROWSERS       Comma list: chrome,chromium,firefox,brave,opera,tor,webkit (default: chrome,chromium,firefox,tor,brave)
  *   COLLECTOR_URL     Default: https://gdtm-dev.globalsiteanalytics.com/kasm.html (#udip payload, #txId)
  *   HEADLESS          1/true for headless (default: false — use headed on KASM). Applies to **Chrome** and all Playwright
@@ -96,7 +98,9 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '..');
 
 /**
- * Load `collect.env` (or `UDI_COLLECT_ENV`) into `process.env` without overriding existing variables.
+ * Load `collect.env` (or `UDI_COLLECT_ENV`) into `process.env`.
+ * Default: keys in the file overwrite existing `process.env` entries (so `UDIBROWSERS` in the file beats a stale shell export).
+ * Set `UDI_COLLECT_ENV_OVERRIDE=0` to only assign when `process.env[key]` is undefined.
  * @param {string} rootDir
  */
 function loadCollectEnvFile(rootDir) {
@@ -113,6 +117,9 @@ function loadCollectEnvFile(rootDir) {
   } catch {
     return;
   }
+  const o = process.env.UDI_COLLECT_ENV_OVERRIDE;
+  const fileOverridesShell =
+    o !== '0' && o !== 'false' && o !== 'off';
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
@@ -127,7 +134,7 @@ function loadCollectEnvFile(rootDir) {
     ) {
       val = val.slice(1, -1);
     }
-    if (process.env[key] === undefined) {
+    if (fileOverridesShell || process.env[key] === undefined) {
       process.env[key] = val;
     }
   }
@@ -1594,6 +1601,7 @@ function displayLabel(kind) {
 async function main() {
   currentRunTxRows = [];
   const kinds = parseBrowserList();
+  process.stderr.write(`[collect] UDIBROWSERS effective: ${kinds.join(', ')}\n`);
   const failures = [];
 
   for (const kind of kinds) {

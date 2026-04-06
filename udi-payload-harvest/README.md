@@ -38,7 +38,7 @@ npm run collect
 
 ## Configure browsers
 
-Optional **`collect.env`** in the project root (copy from **`collect.env.example`**) sets **`UDIBROWSERS`**, **`CHROME_SIMULATE_REAL_USER`**, **`DISABLE_PLUGINS`**, etc. Variables already set in the environment are **not** overwritten. Override the file path with **`UDI_COLLECT_ENV`**. **`run-kasm.sh`** no longer forces **`UDIBROWSERS`** so the file can apply; export **`UDIBROWSERS`** in the shell if you need to override **`collect.env`**.
+Optional **`collect.env`** in the project root (copy from **`collect.env.example`**) sets **`UDIBROWSERS`**, **`CHROME_SIMULATE_REAL_USER`**, **`DISABLE_PLUGINS`**, etc. **Values in the file overwrite** the same variables already exported in your shell (so a full browser list in **`collect.env`** is not ignored when **`UDIBROWSERS=chrome`** is left over from **`~/.bashrc`** or an install script). Use **`UDI_COLLECT_ENV_OVERRIDE=0`** if you want the old rule: only set variables that are **unset**. Point at another file with **`UDI_COLLECT_ENV`**. **`run-kasm.sh`** does not default **`UDIBROWSERS`** so **`collect.env`** can drive the list.
 
 Comma-separated list in **`UDIBROWSERS`** (default: `chrome,chromium,firefox,tor,brave`):
 
