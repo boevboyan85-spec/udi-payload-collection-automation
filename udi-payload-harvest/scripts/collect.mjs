@@ -21,6 +21,8 @@
  *                     **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** or **`PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE`** — headed
  *                     ephemeral **`launch()`** often never draws the native yellow bar (Chromium/Playwright), even with
  *                     **`--enable-automation`**. (Skipped when **`HEADLESS`** is on — no UI infobar then.)
+ *                     Non-stealth **`chrome`** also passes **`--disable-extensions`** (Playwright’s default too) for a minimal
+ *                     extension surface; stealth **`chrome`** strips that default so the launch can align with interactive Chrome.
  *   CHROME_DESKTOP_FILE  Optional path to a Google Chrome **.desktop** file (e.g. Kasm:
  *                     **`/home/kasm-user/Desktop/google-chrome.desktop`**). Parses **`[Desktop Entry]`** **`Exec=`**, strips field codes (`%U`, …), and launches that **binary** via Playwright (not the `.desktop`
  *                     itself). Used only when **`CHROME_SIMULATE_REAL_USER`** is on; when set, **`chrome`** in UDIBROWSERS uses this path instead of **`channel: 'chrome'`**.
@@ -202,7 +204,16 @@ function chromiumAutomationLaunchOpts(kind) {
     const args = ['--disable-blink-features=AutomationControlled'];
     if (!HEADLESS) args.push('--start-maximized');
     out.ignoreDefaultArgs = ['--enable-automation'];
+    // Stealth Chrome only: do not use Playwright’s default --disable-extensions (keeps extension/plugin surface closer to normal Chrome).
+    if (kind === 'chrome') {
+      out.ignoreDefaultArgs = [...out.ignoreDefaultArgs, '--disable-extensions'];
+    }
     out.args = args;
+  }
+  // Default (non-stealth) Google Chrome: ensure --disable-extensions is on the command line (also in Playwright defaults when not ignored).
+  if (kind === 'chrome' && !chromiumEffectiveMitigations(kind)) {
+    const extra = ['--disable-extensions'];
+    out.args = out.args ? [...out.args, ...extra] : extra;
   }
   // Playwright’s default Chromium args always include --disable-infobars (see playwright-core chromiumSwitches),
   // which suppresses the “controlled by automated test software” infobar even when --enable-automation is present.
