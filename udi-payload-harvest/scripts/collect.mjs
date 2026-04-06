@@ -16,6 +16,11 @@
  *                     **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** only). Playwright also defaults to **`--disable-infobars`**,
  *                     which hides the yellow automation bar; for **`chrome`**, that switch is removed when this flag is off
  *                     or when **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** is off so the infobar can show.
+ *                     With this flag off, **`chrome`** also uses **`launchPersistentContext`** and
+ *                     **`~/.config/udi-payload-harvest/chromium-profile-chrome-show-automation/`** unless you already set
+ *                     **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** or **`PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE`** — headed
+ *                     ephemeral **`launch()`** often never draws the native yellow bar (Chromium/Playwright), even with
+ *                     **`--enable-automation`**. (Skipped when **`HEADLESS`** is on — no UI infobar then.)
  *   CHROME_DESKTOP_FILE  Optional path to a Google Chrome **.desktop** file (e.g. Kasm:
  *                     **`/home/kasm-user/Desktop/google-chrome.desktop`**). Parses **`[Desktop Entry]`** **`Exec=`**, strips field codes (`%U`, …), and launches that **binary** via Playwright (not the `.desktop`
  *                     itself). Used only when **`CHROME_SIMULATE_REAL_USER`** is on; when set, **`chrome`** in UDIBROWSERS uses this path instead of **`channel: 'chrome'`**.
@@ -235,6 +240,22 @@ function resolvedChromiumUserDataDir(kind) {
     );
   }
   return null;
+}
+
+/**
+ * Headed ephemeral `chromium.launch()` often does not show Chrome’s native automation infobar; persistent context does
+ * (see Playwright issue #9615 / chromiumSwitches `--disable-infobars` targeting that case).
+ * @param {string} kind
+ * @returns {string | null}
+ */
+function chromePersistentProfileForVisibleAutomation(kind) {
+  if (kind !== 'chrome' || CHROME_SIMULATE_REAL_USER || HEADLESS) return null;
+  return path.join(
+    os.homedir(),
+    '.config',
+    'udi-payload-harvest',
+    'chromium-profile-chrome-show-automation',
+  );
 }
 
 /**
@@ -1456,7 +1477,8 @@ async function main() {
 
     const chromiumKinds = new Set(['chrome', 'chromium', 'brave', 'opera']);
     const userDataDir = chromiumKinds.has(kind)
-      ? resolvedChromiumUserDataDir(kind)
+      ? resolvedChromiumUserDataDir(kind) ??
+        chromePersistentProfileForVisibleAutomation(kind)
       : null;
 
     if (userDataDir) {
@@ -1465,6 +1487,15 @@ async function main() {
         process.stderr.write(
           `[playwright] persistent Chromium userDataDir ${userDataDir}\n`,
         );
+        if (
+          kind === 'chrome' &&
+          !CHROME_SIMULATE_REAL_USER &&
+          resolvedChromiumUserDataDir(kind) == null
+        ) {
+          process.stderr.write(
+            '[chrome] CHROME_SIMULATE_REAL_USER=0: using this profile so the native automation infobar can appear (ephemeral launch usually does not show it).\n',
+          );
+        }
         const context = await launchPersistentChromiumContext(kind, userDataDir);
         try {
           await runChromiumCollectorWithPersistentContext(context, label);
