@@ -23,6 +23,9 @@
  *                     **`--enable-automation`**. (Skipped when **`HEADLESS`** is on — no UI infobar then.)
  *                     Non-stealth **`chrome`** also passes **`--disable-extensions`** (Playwright’s default too) for a minimal
  *                     extension surface; stealth **`chrome`** strips that default so the launch can align with interactive Chrome.
+ *                     Non-stealth **`chrome`** injects an init script so **`navigator.plugins`** / **`navigator.mimeTypes`** report
+ *                     length **0** (built-in PDF entries are otherwise still visible to page scripts), and tries
+ *                     **`navigator.pdfViewerEnabled` → false** when the property is configurable.
  *   CHROME_DESKTOP_FILE  Optional path to a Google Chrome **.desktop** file (e.g. Kasm:
  *                     **`/home/kasm-user/Desktop/google-chrome.desktop`**). Parses **`[Desktop Entry]`** **`Exec=`**, strips field codes (`%U`, …), and launches that **binary** via Playwright (not the `.desktop`
  *                     itself). Used only when **`CHROME_SIMULATE_REAL_USER`** is on; when set, **`chrome`** in UDIBROWSERS uses this path instead of **`channel: 'chrome'`**.
@@ -288,6 +291,67 @@ async function addChromiumMitigationInitScript(context, kind) {
 }
 
 /**
+ * Non-stealth Google Chrome only: `--disable-extensions` does not remove built-in PDF (etc.) from `navigator.plugins`.
+ * Exposes empty PluginArray / MimeTypeArray-like objects before collector scripts run.
+ * @param {import('playwright').BrowserContext} context
+ * @param {string} kind
+ */
+async function addChromeNonStealthEmptyPluginsInitScript(context, kind) {
+  if (kind !== 'chrome' || chromiumEffectiveMitigations(kind)) return;
+  await context.addInitScript(() => {
+    function buildEmptyPluginArray() {
+      const PA = typeof PluginArray !== 'undefined' ? PluginArray : null;
+      const p = PA ? Object.create(PA.prototype) : [];
+      Object.defineProperty(p, 'length', {
+        value: 0,
+        enumerable: true,
+        configurable: true,
+      });
+      p.item = () => null;
+      p.namedItem = () => null;
+      p.refresh = () => {};
+      p[Symbol.iterator] = function* () {};
+      return p;
+    }
+    function buildEmptyMimeTypeArray() {
+      const MTA = typeof MimeTypeArray !== 'undefined' ? MimeTypeArray : null;
+      const m = MTA ? Object.create(MTA.prototype) : [];
+      Object.defineProperty(m, 'length', {
+        value: 0,
+        enumerable: true,
+        configurable: true,
+      });
+      m.item = () => null;
+      m.namedItem = () => null;
+      m[Symbol.iterator] = function* () {};
+      return m;
+    }
+    const pluginsSingleton = buildEmptyPluginArray();
+    const mimeSingleton = buildEmptyMimeTypeArray();
+    try {
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => pluginsSingleton,
+        configurable: true,
+      });
+      Object.defineProperty(navigator, 'mimeTypes', {
+        get: () => mimeSingleton,
+        configurable: true,
+      });
+    } catch {
+      /* ignore */
+    }
+    try {
+      Object.defineProperty(navigator, 'pdfViewerEnabled', {
+        get: () => false,
+        configurable: true,
+      });
+    } catch {
+      /* not always configurable */
+    }
+  });
+}
+
+/**
  * @param {string} kind chrome|chromium|brave|opera
  */
 async function launchChromiumBrowser(kind) {
@@ -421,6 +485,7 @@ async function launchPersistentChromiumContext(kind, userDataDir) {
       throw new Error(`launchPersistentChromiumContext: unsupported kind ${kind}`);
   }
   await addChromiumMitigationInitScript(context, kind);
+  await addChromeNonStealthEmptyPluginsInitScript(context, kind);
   return context;
 }
 
@@ -1418,6 +1483,7 @@ async function runOneBrowser(browser, displayName, kind) {
   }
   const context = await browser.newContext(contextOpts);
   if (isChromium) await addChromiumMitigationInitScript(context, kind);
+  if (isChromium) await addChromeNonStealthEmptyPluginsInitScript(context, kind);
   const page = await context.newPage();
   try {
     await runCollectorInPage(page, browser, displayName);
