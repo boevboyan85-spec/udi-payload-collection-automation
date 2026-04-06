@@ -15,6 +15,8 @@
 # TOR_SETTLE_AFTER_LOAD_MS=4000 (default below): ms after Tor navigation before polling #udip.
 # BRAVE_PATH / TOR_BROWSER_PATH: exported when brave exists or ~/tor-browser has Browser/firefox-bin (Gecko; not the firefox wrapper script).
 # UDIBROWSERS default: chrome,chromium,firefox,brave,tor (matches collect.mjs / run-kasm.sh).
+# CHROME_SIMULATE_REAL_USER=1 (default in collect.mjs): use CHROME_DESKTOP_FILE if set + stealth launch for Google Chrome only.
+#   Set 0/false for stock Playwright Chrome (automation banner visible); CHROME_DESKTOP_FILE is then ignored for chrome.
 #
 # Installs Brave from the official APT repo (for UDIBROWSERS=brave). Set SKIP_BRAVE_APT=1 to skip.
 #
@@ -244,6 +246,7 @@ fi
 
 echo "Done. Harvest project directory: $(pwd)"
 echo "Add to ~/.bashrc (or export in your session) to persist for npm run collect:"
+echo "  export CHROME_SIMULATE_REAL_USER=0  # optional: visible automation for Chrome; omit or 1 for desktop-path + stealth (default)"
 echo "  export UDIBROWSERS=${UDIBROWSERS}  # default matches collect.mjs"
 echo "  export TOR_WARMUP_MS=${TOR_WARMUP_MS}  # ms after Marionette before navigation (default ~20s)"
 echo "  export TOR_SETTLE_AFTER_LOAD_MS=${TOR_SETTLE_AFTER_LOAD_MS}  # ms after Tor page load before polling #udip"

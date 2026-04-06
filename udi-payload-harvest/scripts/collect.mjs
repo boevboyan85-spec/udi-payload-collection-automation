@@ -7,9 +7,16 @@
  *   UDIBROWSERS       Comma list: chrome,chromium,firefox,brave,opera,tor,webkit (default: chrome,chromium,firefox,brave,tor)
  *   COLLECTOR_URL     Default: https://gdtm-dev.globalsiteanalytics.com/kasm.html (#udip payload, #txId)
  *   HEADLESS          1/true for headless (default: false — use headed on KASM)
+ *   CHROME_SIMULATE_REAL_USER  Default **on** (unset or 1/true). When **on**, **`chrome`** may use
+ *                     **`CHROME_DESKTOP_FILE`** (if set) and the same Chromium stealth options as
+ *                     **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** for that browser. When **off** (0/false),
+ *                     **`chrome`** ignores **`CHROME_DESKTOP_FILE`**, launches via **`channel: 'chrome'`** (or path
+ *                     fallback), and does **not** apply those mitigations — automation UI / **`--enable-automation`**
+ *                     behave like stock Playwright. **`chromium`**, **`brave`**, **`opera`** are unchanged (still follow
+ *                     **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** only).
  *   CHROME_DESKTOP_FILE  Optional path to a Google Chrome **.desktop** file (e.g. Kasm:
  *                     **`/home/kasm-user/Desktop/google-chrome.desktop`**). Parses **`[Desktop Entry]`** **`Exec=`**, strips field codes (`%U`, …), and launches that **binary** via Playwright (not the `.desktop`
- *                     itself). When set, **`chrome`** in UDIBROWSERS uses this path instead of **`channel: 'chrome'`**.
+ *                     itself). Used only when **`CHROME_SIMULATE_REAL_USER`** is on; when set, **`chrome`** in UDIBROWSERS uses this path instead of **`channel: 'chrome'`**.
  *   BRAVE_PATH        Executable for Brave (default: /usr/bin/brave-browser)
  *   OPERA_PATH        Executable for Opera (default: /usr/bin/opera)
  *   FIREFOX_PATH      Override Firefox binary
@@ -115,6 +122,26 @@ const PLAYWRIGHT_AUTOMATION_MITIGATIONS = (() => {
   return true;
 })();
 
+/**
+ * Desktop-style Chrome launch + stealth bundle for **`chrome`** only (see header: CHROME_SIMULATE_REAL_USER).
+ * Default on so existing Kasm setups keep current behavior.
+ */
+const CHROME_SIMULATE_REAL_USER = (() => {
+  const v = process.env.CHROME_SIMULATE_REAL_USER;
+  if (v === '0' || v === 'false') return false;
+  if (v === '1' || v === 'true') return true;
+  return true;
+})();
+
+/**
+ * @param {string} kind chrome|chromium|brave|opera
+ */
+function chromiumEffectiveMitigations(kind) {
+  if (!PLAYWRIGHT_AUTOMATION_MITIGATIONS) return false;
+  if (kind === 'chrome' && !CHROME_SIMULATE_REAL_USER) return false;
+  return true;
+}
+
 /** Off by default — patching `navigator.webdriver` trips “override / own properties” on some risk engines. */
 const PLAYWRIGHT_MASK_NAVIGATOR_WEBDRIVER = (() => {
   const v = process.env.PLAYWRIGHT_MASK_NAVIGATOR_WEBDRIVER;
@@ -158,10 +185,11 @@ function playwrightContextLocaleOpts() {
 
 /**
  * Extra Chromium launch options to lower automation/devtools-style fingerprint noise.
+ * @param {string} kind chrome|chromium|brave|opera
  * @returns {import('playwright').LaunchOptions}
  */
-function chromiumAutomationLaunchOpts() {
-  if (!PLAYWRIGHT_AUTOMATION_MITIGATIONS) return {};
+function chromiumAutomationLaunchOpts(kind) {
+  if (!chromiumEffectiveMitigations(kind)) return {};
   const args = ['--disable-blink-features=AutomationControlled'];
   if (!HEADLESS) args.push('--start-maximized');
   return {
@@ -194,9 +222,13 @@ function resolvedChromiumUserDataDir(kind) {
 
 /**
  * @param {import('playwright').BrowserContext} context
+ * @param {string} kind chrome|chromium|brave|opera
  */
-async function addChromiumMitigationInitScript(context) {
-  if (!PLAYWRIGHT_AUTOMATION_MITIGATIONS || !PLAYWRIGHT_MASK_NAVIGATOR_WEBDRIVER) {
+async function addChromiumMitigationInitScript(context, kind) {
+  if (
+    !chromiumEffectiveMitigations(kind) ||
+    !PLAYWRIGHT_MASK_NAVIGATOR_WEBDRIVER
+  ) {
     return;
   }
   await context.addInitScript(() => {
@@ -210,10 +242,11 @@ async function addChromiumMitigationInitScript(context) {
  * @param {string} kind chrome|chromium|brave|opera
  */
 async function launchChromiumBrowser(kind) {
-  const base = { headless: HEADLESS, ...chromiumAutomationLaunchOpts() };
+  const base = { headless: HEADLESS, ...chromiumAutomationLaunchOpts(kind) };
   switch (kind) {
     case 'chrome': {
-      const desktopFile = process.env.CHROME_DESKTOP_FILE;
+      const desktopFile =
+        CHROME_SIMULATE_REAL_USER ? process.env.CHROME_DESKTOP_FILE : '';
       if (desktopFile && String(desktopFile).trim()) {
         const exe = parseDesktopEntryChromeExec(String(desktopFile));
         process.stderr.write(
@@ -259,18 +292,19 @@ async function launchChromiumBrowser(kind) {
  * @param {string} userDataDir
  */
 async function launchPersistentChromiumContext(kind, userDataDir) {
-  const base = { headless: HEADLESS, ...chromiumAutomationLaunchOpts() };
+  const base = { headless: HEADLESS, ...chromiumAutomationLaunchOpts(kind) };
   const contextOpts = {
     ignoreHTTPSErrors: PLAYWRIGHT_IGNORE_HTTPS_ERRORS,
     ...playwrightContextLocaleOpts(),
   };
-  if (PLAYWRIGHT_AUTOMATION_MITIGATIONS && !HEADLESS) {
+  if (chromiumEffectiveMitigations(kind) && !HEADLESS) {
     contextOpts.viewport = null;
   }
   let context;
   switch (kind) {
     case 'chrome': {
-      const desktopFile = process.env.CHROME_DESKTOP_FILE;
+      const desktopFile =
+        CHROME_SIMULATE_REAL_USER ? process.env.CHROME_DESKTOP_FILE : '';
       if (desktopFile && String(desktopFile).trim()) {
         const exe = parseDesktopEntryChromeExec(String(desktopFile));
         process.stderr.write(
@@ -337,7 +371,7 @@ async function launchPersistentChromiumContext(kind, userDataDir) {
     default:
       throw new Error(`launchPersistentChromiumContext: unsupported kind ${kind}`);
   }
-  await addChromiumMitigationInitScript(context);
+  await addChromiumMitigationInitScript(context, kind);
   return context;
 }
 
@@ -1322,22 +1356,19 @@ async function runCollectorInPage(page, browser, displayName) {
 /**
  * @param {import('playwright').Browser} browser
  * @param {string} displayName
+ * @param {string} kind
  */
-async function runOneBrowser(browser, displayName) {
+async function runOneBrowser(browser, displayName, kind) {
   const isChromium = browser.browserType().name() === 'chromium';
   const contextOpts = {
     ignoreHTTPSErrors: PLAYWRIGHT_IGNORE_HTTPS_ERRORS,
     ...playwrightContextLocaleOpts(),
   };
-  if (
-    PLAYWRIGHT_AUTOMATION_MITIGATIONS &&
-    isChromium &&
-    !HEADLESS
-  ) {
+  if (chromiumEffectiveMitigations(kind) && isChromium && !HEADLESS) {
     contextOpts.viewport = null;
   }
   const context = await browser.newContext(contextOpts);
-  if (isChromium) await addChromiumMitigationInitScript(context);
+  if (isChromium) await addChromiumMitigationInitScript(context, kind);
   const page = await context.newPage();
   try {
     await runCollectorInPage(page, browser, displayName);
@@ -1443,7 +1474,7 @@ async function main() {
       continue;
     }
     try {
-      await runOneBrowser(browser, label);
+      await runOneBrowser(browser, label, kind);
       process.stderr.write(`OK: ${label}\n`);
     } catch (e) {
       failures.push({ kind, phase: 'run', error: e });
