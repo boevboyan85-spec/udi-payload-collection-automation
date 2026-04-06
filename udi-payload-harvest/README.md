@@ -88,8 +88,6 @@ HEADLESS=1 npm run collect
 
 Or set **`HEADLESS=1`** in **`collect.env`** (see **`collect.env.example`**).
 
-Chromium (Chrome, Chromium, Brave, Opera): recent Chrome maps Playwright’s plain **`--headless`** to **new** headless. For the **legacy** implementation (different automation surface / user agent), set **`HEADLESS_CHROMIUM_MODE=old`** (or **`legacy`**) together with **`HEADLESS=1`**.
-
 ## How collection works
 
 1. For each browser: new context, open **[kasm.html](https://gdtm-dev.globalsiteanalytics.com/kasm.html)** (or `COLLECTOR_URL`).
