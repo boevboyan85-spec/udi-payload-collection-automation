@@ -75,6 +75,8 @@ Add it to **`collect.env`** or export it before **`npm run collect`**. **Quit** 
 
 **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** still applies to **chromium**, **brave**, **opera**, and to **chrome** only if **`CHROME_USER_DATA_DIR`** is unset. For Google Chrome with extensions, prefer **`CHROME_USER_DATA_DIR`**.
 
+The collector **always opens a new tab** for the URL (restored-session profiles used to reuse `pages()[0]`, which could sit on `chrome://` or a restored tab and never complete navigation). If the page still does not load, check whether an extension (Canvas Blocker, ad blockers) blocks **`COLLECTOR_URL`** — temporarily allow that origin or disable the extension for testing.
+
 ## URLs
 
 | Variable | Default |

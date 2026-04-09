@@ -581,7 +581,12 @@ async function launchPersistentChromiumContext(kind, userDataDir) {
  */
 async function runChromiumCollectorWithPersistentContext(context, displayName) {
   const browser = context.browser();
-  const page = context.pages()[0] ?? (await context.newPage());
+  // Always open a fresh tab. Restored sessions (real user profiles) often leave `pages()[0]` on
+  // chrome:// URLs, NTP, or a restored tab — navigation / waitUntil then misbehaves or appears “stuck”.
+  const page = await context.newPage();
+  process.stderr.write(
+    '[playwright] persistent context: using a new tab for the collector (other restored tabs are left alone).\n',
+  );
   await runCollectorInPage(page, browser, displayName);
 }
 
@@ -1533,6 +1538,7 @@ async function runCollectorInPage(page, browser, displayName) {
     version = 'unknown';
   }
 
+  process.stderr.write(`[collect] Navigating to ${COLLECTOR_URL} …\n`);
   await page.goto(COLLECTOR_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
   // Avoid `networkidle` — analytics / WebSockets often keep connections open so it may never resolve.
   await page.waitForLoadState('load', { timeout: 60000 }).catch(() => {});
