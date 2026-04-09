@@ -76,11 +76,19 @@
  *                                   **`Accept-Language`**. If unset, **`LANG`** is parsed when it looks like **`en_US.UTF-8`**.
  *   PLAYWRIGHT_TIMEZONE_ID  IANA zone for Playwright **`timezoneId`** (e.g. **`America/New_York`** when IP geolocation is US).
  *                                   Reduces “time zone mismatch vs IP” when the session TZ differs from the egress IP region.
- *   PLAYWRIGHT_CHROMIUM_USER_DATA_DIR  If set, Chromium-family collectors use **`launchPersistentContext`** with this
- *                                   directory (created if missing) instead of an ephemeral context — closer to a normal
- *                                   profile and often clears false **private/incognito** flags. Use a dedicated path, not
- *                                   your interactive Chrome profile while Chrome is running (profile lock). Per-browser
- *                                   default when **`PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE=1`**: **`~/.config/udi-payload-harvest/chromium-profile-<kind>`**.
+ *   CHROME_USER_DATA_DIR  **Google Chrome only:** absolute or `~`-style path to Chrome’s **user data** directory (the profile
+ *                                   where extensions like Canvas Blocker live). Linux/Kasm typical: **`~/.config/google-chrome`**;
+ *                                   macOS: **`~/Library/Application Support/Google/Chrome`**. When set, **`chrome`** uses
+ *                                   **`launchPersistentContext`** with this directory so **installed extensions load**.
+ *                                   **Close** any normal Chrome windows using this profile first (singleton lock). Takes
+ *                                   precedence over **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** for **`kind=chrome`** only.
+ *                                   **`CHROME_DESKTOP_FILE`** still selects the **binary**; it does **not** attach your desktop
+ *                                   profile by itself.
+ *   PLAYWRIGHT_CHROMIUM_USER_DATA_DIR  If set, **non-Chrome** Chromium-family kinds (and **chrome** only if
+ *                                   **`CHROME_USER_DATA_DIR`** is unset) use **`launchPersistentContext`** with this directory.
+ *                                   Use a dedicated path; avoid your interactive profile while that browser is running
+ *                                   (profile lock). Per-browser default when **`PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE=1`**:
+ *                                   **`~/.config/udi-payload-harvest/chromium-profile-<kind>`**.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -273,8 +281,12 @@ function chromiumAutomationLaunchOpts(kind) {
     }
     out.args = args;
   }
-  // Default (non-stealth) Google Chrome: ensure --disable-extensions is on the command line (also in Playwright defaults when not ignored).
-  if (kind === 'chrome' && !chromiumEffectiveMitigations(kind)) {
+  // Default (non-stealth) Google Chrome: --disable-extensions unless a real profile is used (extensions must load).
+  if (
+    kind === 'chrome' &&
+    !chromiumEffectiveMitigations(kind) &&
+    !trimEnv('CHROME_USER_DATA_DIR')
+  ) {
     const extra = ['--disable-extensions'];
     out.args = out.args ? [...out.args, ...extra] : extra;
   }
@@ -300,6 +312,14 @@ function chromiumAutomationLaunchOpts(kind) {
  * @returns {string | null}
  */
 function resolvedChromiumUserDataDir(kind) {
+  if (kind === 'chrome') {
+    const chromeOnly = trimEnv('CHROME_USER_DATA_DIR');
+    if (chromeOnly) {
+      return path.resolve(
+        chromeOnly.startsWith('~') ? chromeOnly.replace(/^~(?=$|[/\\])/, os.homedir()) : chromeOnly,
+      );
+    }
+  }
   const explicit = process.env.PLAYWRIGHT_CHROMIUM_USER_DATA_DIR;
   if (explicit != null && String(explicit).trim() !== '') {
     return path.resolve(String(explicit).trim());
@@ -1607,6 +1627,22 @@ async function main() {
   for (const kind of kinds) {
     const label = displayLabel(kind);
     process.stderr.write(`\n>>> ${label} (${kind})\n`);
+
+    if (kind === 'chrome') {
+      const chromeProfile = trimEnv('CHROME_USER_DATA_DIR');
+      if (chromeProfile) {
+        process.stderr.write(
+          `[chrome] CHROME_USER_DATA_DIR: extensions and settings load from this profile; quit other Chrome sessions using it if you see a profile lock error.\n`,
+        );
+      } else if (
+        trimEnv('CHROME_DESKTOP_FILE') &&
+        !(process.env.PLAYWRIGHT_CHROMIUM_USER_DATA_DIR || '').trim()
+      ) {
+        process.stderr.write(
+          '[chrome] CHROME_DESKTOP_FILE sets the Chrome binary only. To use your real profile (e.g. Canvas Blocker), set CHROME_USER_DATA_DIR (Linux: ~/.config/google-chrome).\n',
+        );
+      }
+    }
 
     if (kind === 'tor') {
       try {

@@ -60,6 +60,21 @@ export TOR_BROWSER_PATH="/path/to/tor-browser/Browser/firefox-bin"
 npm run collect
 ```
 
+### Google Chrome: real profile and extensions (e.g. Canvas Blocker)
+
+**`CHROME_DESKTOP_FILE`** only selects which **Chrome binary** to launch (same as a `.desktop` shortcut). It does **not** load your interactive Chrome **profile**, so extensions installed for day-to-day browsing will not appear unless you point the collector at that profile directory.
+
+Set **`CHROME_USER_DATA_DIR`** to Chrome’s user-data path so **`launchPersistentContext`** uses the same profile tree (extensions, settings):
+
+| OS | Typical path |
+| -- | -------------- |
+| Linux / Kasm | `~/.config/google-chrome` |
+| macOS | `~/Library/Application Support/Google/Chrome` |
+
+Add it to **`collect.env`** or export it before **`npm run collect`**. **Quit** other Chrome windows that use that profile first, or you may hit a **profile lock** / singleton error.
+
+**`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** still applies to **chromium**, **brave**, **opera**, and to **chrome** only if **`CHROME_USER_DATA_DIR`** is unset. For Google Chrome with extensions, prefer **`CHROME_USER_DATA_DIR`**.
+
 ## URLs
 
 | Variable | Default |
