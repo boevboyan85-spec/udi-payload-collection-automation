@@ -76,15 +76,14 @@
  *                                   **`Accept-Language`**. If unset, **`LANG`** is parsed when it looks like **`en_US.UTF-8`**.
  *   PLAYWRIGHT_TIMEZONE_ID  IANA zone for Playwright **`timezoneId`** (e.g. **`America/New_York`** when IP geolocation is US).
  *                                   Reduces “time zone mismatch vs IP” when the session TZ differs from the egress IP region.
- *   CHROME_USER_DATA_DIR  **Google Chrome only:** path to a **copy** of Chrome’s user-data directory where extensions live.
- *                                   You **cannot** point this at the **default** install profile (**`~/.config/google-chrome`** on
- *                                   Linux, **`~/Library/Application Support/Google/Chrome`** on macOS, etc.): Chrome **refuses**
- *                                   remote debugging (CDP) on that path — Playwright cannot drive the browser (**stderr**:
- *                                   “DevTools remote debugging requires a non-default data directory”). **Copy** the folder once,
- *                                   e.g. **`cp -a ~/.config/google-chrome ~/.config/google-chrome-udi-collect`**, set
- *                                   **`CHROME_USER_DATA_DIR`** to the copy, and **close** all Chrome windows before first run.
- *                                   Takes precedence over **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** for **`kind=chrome`** only.
- *                                   **`CHROME_DESKTOP_FILE`** still selects the **binary** only.
+ *   CHROME_USER_DATA_DIR  **Google Chrome only:** path to Chrome’s user-data directory (extensions, settings). If you set
+ *                                   this to the **default** profile path (**`~/.config/google-chrome`** on Linux, etc.), the
+ *                                   script **mirrors** it under **`~/.config/udi-payload-harvest/chrome-playwright-mirror/`** and
+ *                                   uses that path — Chrome blocks CDP on the default dir, but accepts automation on the
+ *                                   mirror. **Close all Chrome windows** before the first mirror or a refresh (avoid locked /
+ *                                   corrupt copies). **`CHROME_PROFILE_REFRESH_MIRROR=1`** forces a re-copy from default.
+ *                                   Any **non-default** path is used as-is. Takes precedence over
+ *                                   **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** for **`kind=chrome`** only.
  *   PLAYWRIGHT_CHROMIUM_USER_DATA_DIR  If set, **non-Chrome** Chromium-family kinds (and **chrome** only if
  *                                   **`CHROME_USER_DATA_DIR`** is unset) use **`launchPersistentContext`** with this directory.
  *                                   Use a dedicated path; avoid your interactive profile while that browser is running
@@ -316,9 +315,7 @@ function resolvedChromiumUserDataDir(kind) {
   if (kind === 'chrome') {
     const chromeOnly = trimEnv('CHROME_USER_DATA_DIR');
     if (chromeOnly) {
-      return path.resolve(
-        chromeOnly.startsWith('~') ? chromeOnly.replace(/^~(?=$|[/\\])/, os.homedir()) : chromeOnly,
-      );
+      return effectiveChromeUserDataDir();
     }
   }
   const explicit = process.env.PLAYWRIGHT_CHROMIUM_USER_DATA_DIR;
@@ -376,23 +373,54 @@ function isDefaultGoogleChromeUserDataDir(absDir) {
   return false;
 }
 
+/** Mirrored profile used when CHROME_USER_DATA_DIR points at Chrome’s default path (CDP not allowed there). */
+const CHROME_PLAYWRIGHT_MIRROR_DIR = path.join(
+  os.homedir(),
+  '.config',
+  'udi-payload-harvest',
+  'chrome-playwright-mirror',
+);
+
 /**
- * @param {string} kind
- * @param {string} userDataDir
+ * Resolve **`CHROME_USER_DATA_DIR`**: non-default paths unchanged; default OS profile → mirror copy for Playwright/CDP.
+ * @returns {string}
  */
-function assertChromeUserDataDirAllowsPlaywright(kind, userDataDir) {
-  if (kind !== 'chrome') return;
-  if (isDefaultGoogleChromeUserDataDir(userDataDir)) {
+function effectiveChromeUserDataDir() {
+  const raw = trimEnv('CHROME_USER_DATA_DIR');
+  if (!raw) {
+    throw new Error('effectiveChromeUserDataDir: empty CHROME_USER_DATA_DIR');
+  }
+  const resolved = path.resolve(
+    raw.startsWith('~') ? raw.replace(/^~(?=$|[/\\])/, os.homedir()) : raw,
+  );
+  if (!isDefaultGoogleChromeUserDataDir(resolved)) {
+    return resolved;
+  }
+  if (!fs.existsSync(resolved)) {
     throw new Error(
-      'CHROME_USER_DATA_DIR must not be Chrome’s default profile directory. Chrome blocks Playwright/CDP ' +
-        '(remote debugging) there — navigation will not work (see stderr: DevTools remote debugging requires a ' +
-        'non-default data directory).\n' +
-        'Copy your profile and use the copy, e.g.:\n' +
-        '  cp -a ~/.config/google-chrome ~/.config/google-chrome-udi-collect\n' +
-        '  export CHROME_USER_DATA_DIR="$HOME/.config/google-chrome-udi-collect"\n' +
-        'Close all Chrome windows before running with the new copy.',
+      `CHROME_USER_DATA_DIR default profile path does not exist: ${resolved}`,
     );
   }
+  const mirror = CHROME_PLAYWRIGHT_MIRROR_DIR;
+  const refresh =
+    process.env.CHROME_PROFILE_REFRESH_MIRROR === '1' ||
+    process.env.CHROME_PROFILE_REFRESH_MIRROR === 'true';
+  fs.mkdirSync(path.dirname(mirror), { recursive: true });
+  if (!fs.existsSync(mirror) || refresh) {
+    process.stderr.write(
+      `[chrome] Chrome blocks CDP on the default profile dir; mirroring once to:\n  ${mirror}\n` +
+        `Close all Chrome windows first (large profiles may take a minute).\n`,
+    );
+    if (fs.existsSync(mirror)) {
+      fs.rmSync(mirror, { recursive: true, force: true });
+    }
+    fs.cpSync(resolved, mirror, { recursive: true });
+  } else {
+    process.stderr.write(
+      `[chrome] Using existing mirrored profile ${mirror} (set CHROME_PROFILE_REFRESH_MIRROR=1 to re-copy from default).\n`,
+    );
+  }
+  return mirror;
 }
 
 /**
@@ -550,7 +578,6 @@ async function launchChromiumBrowser(kind) {
  * @param {string} userDataDir
  */
 async function launchPersistentChromiumContext(kind, userDataDir) {
-  assertChromeUserDataDirAllowsPlaywright(kind, userDataDir);
   const base = { headless: HEADLESS, ...chromiumAutomationLaunchOpts(kind) };
   const contextOpts = {
     ignoreHTTPSErrors: PLAYWRIGHT_IGNORE_HTTPS_ERRORS,
