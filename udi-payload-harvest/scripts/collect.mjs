@@ -381,6 +381,44 @@ const CHROME_PLAYWRIGHT_MIRROR_DIR = path.join(
   'chrome-playwright-mirror',
 );
 
+/** Chrome creates these under the user-data-dir (and sometimes under profile subdirs) to block concurrent use. */
+const CHROME_SINGLETON_ARTIFACTS = [
+  'SingletonLock',
+  'SingletonSocket',
+  'SingletonCookie',
+];
+
+/**
+ * Remove singleton lock files so a **copied** profile tree can launch without "profile in use" / exit 21.
+ * Does not touch the original Chrome dir — call only on the Playwright mirror path.
+ * @param {string} userDataDir
+ */
+function removeChromeSingletonArtifacts(userDataDir) {
+  const rm = (p) => {
+    try {
+      fs.rmSync(p, { force: true });
+    } catch {
+      /* ignore */
+    }
+  };
+  const strip = (dir) => {
+    for (const name of CHROME_SINGLETON_ARTIFACTS) {
+      rm(path.join(dir, name));
+    }
+  };
+  strip(userDataDir);
+  let entries;
+  try {
+    entries = fs.readdirSync(userDataDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const ent of entries) {
+    if (!ent.isDirectory()) continue;
+    strip(path.join(userDataDir, ent.name));
+  }
+}
+
 /**
  * Resolve **`CHROME_USER_DATA_DIR`**: non-default paths unchanged; default OS profile → mirror copy for Playwright/CDP.
  * @returns {string}
@@ -420,6 +458,7 @@ function effectiveChromeUserDataDir() {
       `[chrome] Using existing mirrored profile ${mirror} (set CHROME_PROFILE_REFRESH_MIRROR=1 to re-copy from default).\n`,
     );
   }
+  removeChromeSingletonArtifacts(mirror);
   return mirror;
 }
 
