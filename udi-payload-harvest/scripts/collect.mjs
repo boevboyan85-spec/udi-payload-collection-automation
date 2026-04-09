@@ -76,14 +76,15 @@
  *                                   **`Accept-Language`**. If unset, **`LANG`** is parsed when it looks like **`en_US.UTF-8`**.
  *   PLAYWRIGHT_TIMEZONE_ID  IANA zone for Playwright **`timezoneId`** (e.g. **`America/New_York`** when IP geolocation is US).
  *                                   Reduces “time zone mismatch vs IP” when the session TZ differs from the egress IP region.
- *   CHROME_USER_DATA_DIR  **Google Chrome only:** absolute or `~`-style path to Chrome’s **user data** directory (the profile
- *                                   where extensions like Canvas Blocker live). Linux/Kasm typical: **`~/.config/google-chrome`**;
- *                                   macOS: **`~/Library/Application Support/Google/Chrome`**. When set, **`chrome`** uses
- *                                   **`launchPersistentContext`** with this directory so **installed extensions load**.
- *                                   **Close** any normal Chrome windows using this profile first (singleton lock). Takes
- *                                   precedence over **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** for **`kind=chrome`** only.
- *                                   **`CHROME_DESKTOP_FILE`** still selects the **binary**; it does **not** attach your desktop
- *                                   profile by itself.
+ *   CHROME_USER_DATA_DIR  **Google Chrome only:** path to a **copy** of Chrome’s user-data directory where extensions live.
+ *                                   You **cannot** point this at the **default** install profile (**`~/.config/google-chrome`** on
+ *                                   Linux, **`~/Library/Application Support/Google/Chrome`** on macOS, etc.): Chrome **refuses**
+ *                                   remote debugging (CDP) on that path — Playwright cannot drive the browser (**stderr**:
+ *                                   “DevTools remote debugging requires a non-default data directory”). **Copy** the folder once,
+ *                                   e.g. **`cp -a ~/.config/google-chrome ~/.config/google-chrome-udi-collect`**, set
+ *                                   **`CHROME_USER_DATA_DIR`** to the copy, and **close** all Chrome windows before first run.
+ *                                   Takes precedence over **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** for **`kind=chrome`** only.
+ *                                   **`CHROME_DESKTOP_FILE`** still selects the **binary** only.
  *   PLAYWRIGHT_CHROMIUM_USER_DATA_DIR  If set, **non-Chrome** Chromium-family kinds (and **chrome** only if
  *                                   **`CHROME_USER_DATA_DIR`** is unset) use **`launchPersistentContext`** with this directory.
  *                                   Use a dedicated path; avoid your interactive profile while that browser is running
@@ -337,6 +338,64 @@ function resolvedChromiumUserDataDir(kind) {
 }
 
 /**
+ * Chrome disallows CDP / `--remote-debugging-pipe` with the OS default user-data-dir (security).
+ * @param {string} absDir
+ * @returns {boolean}
+ */
+function isDefaultGoogleChromeUserDataDir(absDir) {
+  let resolved;
+  try {
+    resolved = fs.realpathSync(absDir);
+  } catch {
+    resolved = path.resolve(absDir);
+  }
+  const r = resolved.toLowerCase();
+  const h = os.homedir();
+  const candidates = [
+    path.join(h, '.config', 'google-chrome'),
+    path.join(h, '.config', 'google-chrome-beta'),
+    path.join(h, '.config', 'google-chrome-unstable'),
+    path.join(h, 'Library', 'Application Support', 'Google', 'Chrome'),
+    path.join(h, 'Library', 'Application Support', 'Google', 'Chrome Beta'),
+  ];
+  if (process.platform === 'win32' && process.env.LOCALAPPDATA) {
+    const la = process.env.LOCALAPPDATA;
+    candidates.push(
+      path.join(la, 'Google', 'Chrome', 'User Data'),
+      path.join(la, 'Google', 'Chrome SxS', 'User Data'),
+    );
+  }
+  for (const c of candidates) {
+    try {
+      if (!fs.existsSync(c)) continue;
+      if (fs.realpathSync(c).toLowerCase() === r) return true;
+    } catch {
+      /* ignore */
+    }
+  }
+  return false;
+}
+
+/**
+ * @param {string} kind
+ * @param {string} userDataDir
+ */
+function assertChromeUserDataDirAllowsPlaywright(kind, userDataDir) {
+  if (kind !== 'chrome') return;
+  if (isDefaultGoogleChromeUserDataDir(userDataDir)) {
+    throw new Error(
+      'CHROME_USER_DATA_DIR must not be Chrome’s default profile directory. Chrome blocks Playwright/CDP ' +
+        '(remote debugging) there — navigation will not work (see stderr: DevTools remote debugging requires a ' +
+        'non-default data directory).\n' +
+        'Copy your profile and use the copy, e.g.:\n' +
+        '  cp -a ~/.config/google-chrome ~/.config/google-chrome-udi-collect\n' +
+        '  export CHROME_USER_DATA_DIR="$HOME/.config/google-chrome-udi-collect"\n' +
+        'Close all Chrome windows before running with the new copy.',
+    );
+  }
+}
+
+/**
  * Headed ephemeral `chromium.launch()` often does not show Chrome’s native automation infobar; persistent context does
  * (see Playwright issue #9615 / chromiumSwitches `--disable-infobars` targeting that case).
  * @param {string} kind
@@ -491,6 +550,7 @@ async function launchChromiumBrowser(kind) {
  * @param {string} userDataDir
  */
 async function launchPersistentChromiumContext(kind, userDataDir) {
+  assertChromeUserDataDirAllowsPlaywright(kind, userDataDir);
   const base = { headless: HEADLESS, ...chromiumAutomationLaunchOpts(kind) };
   const contextOpts = {
     ignoreHTTPSErrors: PLAYWRIGHT_IGNORE_HTTPS_ERRORS,
@@ -1645,7 +1705,7 @@ async function main() {
         !(process.env.PLAYWRIGHT_CHROMIUM_USER_DATA_DIR || '').trim()
       ) {
         process.stderr.write(
-          '[chrome] CHROME_DESKTOP_FILE sets the Chrome binary only. To use your real profile (e.g. Canvas Blocker), set CHROME_USER_DATA_DIR (Linux: ~/.config/google-chrome).\n',
+          '[chrome] CHROME_DESKTOP_FILE sets the Chrome binary only. For extensions, set CHROME_USER_DATA_DIR to a copy of your profile (not ~/.config/google-chrome — Chrome blocks automation there); see README.\n',
         );
       }
     }

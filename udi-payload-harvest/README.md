@@ -62,20 +62,27 @@ npm run collect
 
 ### Google Chrome: real profile and extensions (e.g. Canvas Blocker)
 
-**`CHROME_DESKTOP_FILE`** only selects which **Chrome binary** to launch (same as a `.desktop` shortcut). It does **not** load your interactive Chrome **profile**, so extensions installed for day-to-day browsing will not appear unless you point the collector at that profile directory.
+**`CHROME_DESKTOP_FILE`** only selects which **Chrome binary** to launch (same as a `.desktop` shortcut). It does **not** load your interactive Chrome **profile**, so extensions installed for day-to-day browsing will not appear unless you point the collector at a **user-data directory** that contains that profile.
 
-Set **`CHROME_USER_DATA_DIR`** to Chrome’s user-data path so **`launchPersistentContext`** uses the same profile tree (extensions, settings):
+**You cannot set `CHROME_USER_DATA_DIR` to Chrome’s default profile folder** (e.g. `~/.config/google-chrome` on Linux). Chrome **blocks** Playwright’s remote debugging (CDP) on that path, so the session will not navigate correctly; stderr shows: *DevTools remote debugging requires a non-default data directory*.
 
-| OS | Typical path |
-| -- | -------------- |
-| Linux / Kasm | `~/.config/google-chrome` |
-| macOS | `~/Library/Application Support/Google/Chrome` |
+**Workaround — use a copy of the profile:**
 
-Add it to **`collect.env`** or export it before **`npm run collect`**. **Quit** other Chrome windows that use that profile first, or you may hit a **profile lock** / singleton error.
+```bash
+# Once (or after you change extensions and want a fresh copy):
+cp -a ~/.config/google-chrome ~/.config/google-chrome-udi-collect
+```
 
-**`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** still applies to **chromium**, **brave**, **opera**, and to **chrome** only if **`CHROME_USER_DATA_DIR`** is unset. For Google Chrome with extensions, prefer **`CHROME_USER_DATA_DIR`**.
+Then set **`CHROME_USER_DATA_DIR`** to the **copy** (e.g. **`/home/kasm-user/.config/google-chrome-udi-collect`**). **Quit** all normal Chrome windows before the first run so the copy isn’t locked. Re-copy if you need an updated extension set from your daily profile.
 
-The collector **always opens a new tab** for the URL (restored-session profiles used to reuse `pages()[0]`, which could sit on `chrome://` or a restored tab and never complete navigation). If the page still does not load, check whether an extension (Canvas Blocker, ad blockers) blocks **`COLLECTOR_URL`** — temporarily allow that origin or disable the extension for testing.
+| OS | Do **not** use as `CHROME_USER_DATA_DIR` | Use a **copy** under another name instead |
+| -- | ----------------------------------------- | ------------------------------------------- |
+| Linux / Kasm | `~/.config/google-chrome` | e.g. `~/.config/google-chrome-udi-collect` |
+| macOS | `~/Library/Application Support/Google/Chrome` | e.g. `~/chrome-udi-collect` |
+
+**`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** still applies to **chromium**, **brave**, **opera**, and to **chrome** only if **`CHROME_USER_DATA_DIR`** is unset. For Google Chrome with extensions, prefer **`CHROME_USER_DATA_DIR`** pointing at a **non-default** copy path.
+
+The collector **always opens a new tab** for the URL. If the page still does not load, check whether an extension (Canvas Blocker, ad blockers) blocks **`COLLECTOR_URL`** — temporarily allow that origin or disable the extension for testing.
 
 ## URLs
 
