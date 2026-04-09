@@ -455,7 +455,8 @@ function effectiveChromeUserDataDir() {
     fs.cpSync(resolved, mirror, { recursive: true });
   } else {
     process.stderr.write(
-      `[chrome] Using existing mirrored profile ${mirror} (set CHROME_PROFILE_REFRESH_MIRROR=1 to re-copy from default).\n`,
+      `[chrome] Using existing mirrored profile ${mirror} (set CHROME_PROFILE_REFRESH_MIRROR=1 to re-copy from default).\n` +
+        `[chrome] New extensions/settings in normal Chrome are not in the mirror until you re-copy (quit Chrome first).\n`,
     );
   }
   removeChromeSingletonArtifacts(mirror);
