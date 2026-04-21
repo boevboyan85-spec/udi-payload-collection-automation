@@ -39,7 +39,9 @@
  *                     (same paths as **`CHROME_USER_DATA_DIR`** default detection) so installed extensions are available.
  *   CHROME_DESKTOP_FILE  Optional path to a Google Chrome **.desktop** file (e.g. Kasm:
  *                     **`/home/kasm-user/Desktop/google-chrome.desktop`**). Parses **`[Desktop Entry]`** **`Exec=`**, strips field codes (`%U`, …), and launches that **binary** via Playwright (not the `.desktop`
- *                     itself). Used only when **`CHROME_SIMULATE_REAL_USER`** is on; when set, **`chrome`** in UDIBROWSERS uses this path instead of **`channel: 'chrome'`**.
+ *                     itself). **`~/...`** and paths relative to **`$HOME`** are expanded. Used only when **`CHROME_SIMULATE_REAL_USER`** is on.
+ *                     If this file is missing or invalid (common after a new Kasm image/session), the script tries common
+ *                     names under **`~/Desktop/`**, then falls back to **`channel: 'chrome'`** / known install paths.
  *   BRAVE_PATH        Executable for Brave (default: /usr/bin/brave-browser)
  *   OPERA_PATH        Executable for Opera (default: /usr/bin/opera)
  *   FIREFOX_PATH      Override Firefox binary
@@ -628,20 +630,111 @@ async function addChromeNonStealthEmptyPluginsInitScript(context, kind) {
 }
 
 /**
+ * Expand **`~/`** and resolve **`CHROME_DESKTOP_FILE`** relative to **`$HOME`** (Kasm often uses `Desktop/...` from cwd).
+ * @param {string} desktopPath
+ */
+function expandChromeDesktopFilePath(desktopPath) {
+  const t = String(desktopPath ?? '').trim();
+  if (!t) return t;
+  if (t.startsWith('~/')) {
+    return path.join(os.homedir(), t.slice(2));
+  }
+  if (t === '~') {
+    return os.homedir();
+  }
+  if (!path.isAbsolute(t)) {
+    return path.join(os.homedir(), t);
+  }
+  return t;
+}
+
+/**
+ * @returns {string | null} first existing Chrome-like `.desktop` under **`~/Desktop`**
+ */
+function discoverChromeDesktopShortcut() {
+  const desktopDir = path.join(os.homedir(), 'Desktop');
+  const names = [
+    'google-chrome.desktop',
+    'Google Chrome.desktop',
+    'google-chrome-stable.desktop',
+    'chrome.desktop',
+    'chromium-browser.desktop',
+    'chromium.desktop',
+  ];
+  for (const n of names) {
+    const p = path.join(desktopDir, n);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+/**
+ * @param {string} desktopPath
+ * @returns {{ exe: string } | { error: string }}
+ */
+function tryParseDesktopEntryChromeExec(desktopPath) {
+  try {
+    return { exe: parseDesktopEntryChromeExec(desktopPath) };
+  } catch (e) {
+    return { error: e?.message || String(e) };
+  }
+}
+
+/**
+ * When **`CHROME_SIMULATE_REAL_USER`**, resolve **`CHROME_DESKTOP_FILE`** and/or **`~/Desktop/*.desktop`**.
+ * @returns {{ executablePath: string } | null}
+ */
+function chromeExecutableFromDesktopIfAny() {
+  if (!CHROME_SIMULATE_REAL_USER) return null;
+  /** @type {{ path: string; label: string }[]} */
+  const tried = [];
+  const seen = new Set();
+  function add(raw, label) {
+    if (!raw || !String(raw).trim()) return;
+    const p = String(raw).trim();
+    const expanded = expandChromeDesktopFilePath(p);
+    let norm;
+    try {
+      norm = fs.existsSync(expanded)
+        ? fs.realpathSync(path.resolve(expanded))
+        : path.resolve(expanded);
+    } catch {
+      norm = path.resolve(expanded);
+    }
+    if (seen.has(norm)) return;
+    seen.add(norm);
+    tried.push({ path: p, label });
+  }
+  const fromEnv = trimEnv('CHROME_DESKTOP_FILE');
+  if (fromEnv) add(fromEnv, 'CHROME_DESKTOP_FILE');
+  const guessed = discoverChromeDesktopShortcut();
+  if (guessed) add(guessed, 'Desktop shortcut (auto)');
+  for (const { path: p, label } of tried) {
+    const r = tryParseDesktopEntryChromeExec(p);
+    if ('exe' in r && r.exe) {
+      process.stderr.write(`[chrome] ${label} → executablePath ${r.exe}\n`);
+      return { executablePath: r.exe };
+    }
+    process.stderr.write(`[chrome] ${label}: ${r.error}\n`);
+  }
+  if (tried.length) {
+    process.stderr.write(
+      '[chrome] No usable desktop entry; falling back to channel Chrome / known paths.\n',
+    );
+  }
+  return null;
+}
+
+/**
  * @param {string} kind chrome|chromium|brave|opera
  */
 async function launchChromiumBrowser(kind) {
   const base = { headless: HEADLESS, ...chromiumAutomationLaunchOpts(kind) };
   switch (kind) {
     case 'chrome': {
-      const desktopFile =
-        CHROME_SIMULATE_REAL_USER ? process.env.CHROME_DESKTOP_FILE : '';
-      if (desktopFile && String(desktopFile).trim()) {
-        const exe = parseDesktopEntryChromeExec(String(desktopFile));
-        process.stderr.write(
-          `[chrome] CHROME_DESKTOP_FILE → executablePath ${exe}\n`,
-        );
-        return chromium.launch({ ...base, executablePath: exe });
+      const fromDesktop = chromeExecutableFromDesktopIfAny();
+      if (fromDesktop) {
+        return chromium.launch({ ...base, ...fromDesktop });
       }
       try {
         return await chromium.launch({ ...base, channel: 'chrome' });
@@ -692,16 +785,11 @@ async function launchPersistentChromiumContext(kind, userDataDir) {
   let context;
   switch (kind) {
     case 'chrome': {
-      const desktopFile =
-        CHROME_SIMULATE_REAL_USER ? process.env.CHROME_DESKTOP_FILE : '';
-      if (desktopFile && String(desktopFile).trim()) {
-        const exe = parseDesktopEntryChromeExec(String(desktopFile));
-        process.stderr.write(
-          `[chrome] CHROME_DESKTOP_FILE → executablePath ${exe}\n`,
-        );
+      const fromDesktop = chromeExecutableFromDesktopIfAny();
+      if (fromDesktop) {
         context = await chromium.launchPersistentContext(userDataDir, {
           ...base,
-          executablePath: exe,
+          ...fromDesktop,
           ...contextOpts,
         });
         break;
@@ -1584,7 +1672,8 @@ function resolveChromeBinaryToken(token) {
  * @param {string} desktopPath
  */
 function parseDesktopEntryChromeExec(desktopPath) {
-  const resolved = path.resolve(desktopPath.trim());
+  const expanded = expandChromeDesktopFilePath(desktopPath);
+  const resolved = path.resolve(expanded);
   if (!fs.existsSync(resolved)) {
     throw new Error(`CHROME_DESKTOP_FILE not found: ${resolved}`);
   }
