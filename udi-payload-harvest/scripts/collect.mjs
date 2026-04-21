@@ -35,8 +35,10 @@
  *                     switch in **`ignoreDefaultArgs`** when extensions should load (**`CHROME_SIMULATE_REAL_USER`**, or any
  *                     explicit profile env above). Otherwise Google **`chrome`** keeps Playwright’s default minimal extension surface.
  *   CHROME_SIMULATE_AUTO_PROFILE  Default **off**. With **`CHROME_SIMULATE_REAL_USER=1`** and **`CHROME_USER_DATA_DIR`**
- *                     unset, set **`1`/`true`** to mirror the first existing **default** Google Chrome user-data directory
- *                     (same paths as **`CHROME_USER_DATA_DIR`** default detection) so installed extensions are available.
+ *                     unset, set **`1`/`true`** to mirror a **default** Google Chrome user-data tree (prefers the path with
+ *                     the most extension IDs among **`~/.config/google-chrome`**, **`$XDG_CONFIG_HOME/google-chrome`**, Flatpak,
+ *                     Snap **`~/snap/google-chrome/common/chromium`**, macOS/Windows defaults). Use **`CHROME_PROFILE_REFRESH_MIRROR=1`**
+ *                     after installing new extensions in normal Chrome (quit Chrome first).
  *   CHROME_DESKTOP_FILE  Optional path to a Google Chrome **.desktop** file (e.g. Kasm:
  *                     **`/home/kasm-user/Desktop/google-chrome.desktop`**). Parses **`[Desktop Entry]`** **`Exec=`**, strips field codes (`%U`, …), and launches that **binary** via Playwright (not the `.desktop`
  *                     itself). **`~/...`** and paths relative to **`$HOME`** are expanded. Used only when **`CHROME_SIMULATE_REAL_USER`** is on.
@@ -311,7 +313,11 @@ function chromiumAutomationLaunchOpts(kind) {
   // Playwright’s default Chromium args always include --disable-extensions (playwright-core chromiumSwitches.js);
   // it is not enough to omit it from `args` — it must be listed in `ignoreDefaultArgs` to be removed.
   if (kind === 'chrome' && !chromiumEffectiveMitigations(kind) && chromeWantsExtensionSurface()) {
-    const allowExt = ['--disable-extensions'];
+    // Strip Playwright defaults that block or hobble normal extension loading (chromiumSwitches.js).
+    const allowExt = [
+      '--disable-extensions',
+      '--disable-component-extensions-with-background-pages',
+    ];
     if (Array.isArray(out.ignoreDefaultArgs)) {
       out.ignoreDefaultArgs = [...out.ignoreDefaultArgs, ...allowExt];
     } else {
@@ -347,11 +353,20 @@ function resolvedChromiumUserDataDir(kind) {
     if (CHROME_SIMULATE_REAL_USER && CHROME_SIMULATE_AUTO_PROFILE) {
       const auto = findExistingDefaultChromeUserDataDir();
       if (auto) {
+        const rich = chromeUserDataProfileRichness(auto);
         process.stderr.write(
-          `[chrome] CHROME_SIMULATE_AUTO_PROFILE: mirroring system Chrome user-data from ${auto}\n`,
+          `[chrome] CHROME_SIMULATE_AUTO_PROFILE: mirroring from ${auto} (detected extension IDs under */Extensions: ${rich.extensionIds})\n`,
         );
+        if (rich.extensionIds === 0) {
+          process.stderr.write(
+            '[chrome] No extension folders found in that profile yet. Install extensions in Google Chrome, quit all Chrome windows, then set CHROME_PROFILE_REFRESH_MIRROR=1 once to re-copy into the Playwright mirror.\n',
+          );
+        }
         return resolvedOrMirroredChromeUserDataDir(auto);
       }
+      process.stderr.write(
+        '[chrome] CHROME_SIMULATE_AUTO_PROFILE: no Google Chrome user-data directory found (checked ~/.config, XDG_CONFIG_HOME, Flatpak, Snap, macOS paths). Install Google Chrome, use it once so a profile exists, or set CHROME_USER_DATA_DIR to your profile path.\n',
+      );
     }
   }
   const explicit = process.env.PLAYWRIGHT_CHROMIUM_USER_DATA_DIR;
@@ -373,13 +388,27 @@ function resolvedChromiumUserDataDir(kind) {
 /** @returns {string[]} */
 function defaultGoogleChromeUserDataCandidates() {
   const h = os.homedir();
-  const candidates = [
+  /** @type {string[]} */
+  const candidates = [];
+  const xdg = trimEnv('XDG_CONFIG_HOME');
+  if (xdg && process.platform === 'linux') {
+    candidates.push(path.join(xdg, 'google-chrome'));
+  }
+  candidates.push(
     path.join(h, '.config', 'google-chrome'),
     path.join(h, '.config', 'google-chrome-beta'),
     path.join(h, '.config', 'google-chrome-unstable'),
+  );
+  if (process.platform === 'linux') {
+    candidates.push(
+      path.join(h, '.var', 'app', 'com.google.Chrome', 'config', 'google-chrome'),
+      path.join(h, 'snap', 'google-chrome', 'common', 'chromium'),
+    );
+  }
+  candidates.push(
     path.join(h, 'Library', 'Application Support', 'Google', 'Chrome'),
     path.join(h, 'Library', 'Application Support', 'Google', 'Chrome Beta'),
-  ];
+  );
   if (process.platform === 'win32' && process.env.LOCALAPPDATA) {
     const la = process.env.LOCALAPPDATA;
     candidates.push(
@@ -391,18 +420,70 @@ function defaultGoogleChromeUserDataCandidates() {
 }
 
 /**
- * First existing OS-default Google Chrome user-data directory, if any.
- * @returns {string | null}
+ * Max count of extension IDs (top-level dirs under each profile’s **`Extensions`** folder) across profile subdirs.
+ * @param {string} userDataDir
  */
-function findExistingDefaultChromeUserDataDir() {
-  for (const c of defaultGoogleChromeUserDataCandidates()) {
+function maxChromeExtensionIdCount(userDataDir) {
+  let best = 0;
+  let entries;
+  try {
+    entries = fs.readdirSync(userDataDir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    const extDir = path.join(userDataDir, e.name, 'Extensions');
+    if (!fs.existsSync(extDir)) continue;
     try {
-      if (fs.existsSync(c)) return fs.realpathSync(c);
+      const n = fs
+        .readdirSync(extDir, { withFileTypes: true })
+        .filter((x) => x.isDirectory()).length;
+      if (n > best) best = n;
     } catch {
       /* ignore */
     }
   }
-  return null;
+  return best;
+}
+
+/**
+ * @param {string} userDataDir
+ * @returns {{ extensionIds: number; hasLocalState: boolean }}
+ */
+function chromeUserDataProfileRichness(userDataDir) {
+  return {
+    extensionIds: maxChromeExtensionIdCount(userDataDir),
+    hasLocalState: fs.existsSync(path.join(userDataDir, 'Local State')),
+  };
+}
+
+/**
+ * Prefer a tree that already contains extensions (Kasm may have an empty **`~/.config/google-chrome`**
+ * while the real profile lives under Snap/Flatpak).
+ * @returns {string | null}
+ */
+function findExistingDefaultChromeUserDataDir() {
+  const list = defaultGoogleChromeUserDataCandidates();
+  const seen = new Set();
+  /** @type {{ path: string; score: number }[]} */
+  const found = [];
+  for (const c of list) {
+    try {
+      if (!fs.existsSync(c)) continue;
+      const rp = fs.realpathSync(c);
+      if (seen.has(rp)) continue;
+      seen.add(rp);
+      const { extensionIds, hasLocalState } = chromeUserDataProfileRichness(rp);
+      const score = extensionIds * 10000 + (hasLocalState ? 100 : 0);
+      found.push({ path: rp, score });
+    } catch {
+      /* ignore */
+    }
+  }
+  if (!found.length) return null;
+  found.sort((a, b) => b.score - a.score);
+  return found[0].path;
 }
 
 /**
