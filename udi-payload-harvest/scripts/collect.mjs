@@ -90,7 +90,10 @@
  *                                   script **mirrors** it under **`~/.config/udi-payload-harvest/chrome-playwright-mirror/`** and
  *                                   uses that path — Chrome blocks CDP on the default dir, but accepts automation on the
  *                                   mirror. **Close all Chrome windows** before the first mirror or a refresh (avoid locked /
- *                                   corrupt copies). **`CHROME_PROFILE_REFRESH_MIRROR=1`** forces a re-copy from default.
+ *                                   corrupt copies). **`CHROME_PROFILE_REFRESH_MIRROR=1`** or **`true`** (trimmed) forces a
+ *                                   re-copy. If the mirror already exists but has **fewer** extension folders than the live
+ *                                   profile, the script **re-copies automatically** unless **`CHROME_NO_AUTO_REMIRROR_ON_STALE=1`**.
+ *                                   Copies use **`dereference: true`** so symlinked extension trees are materialized.
  *                                   Any **non-default** path is used as-is. Takes precedence over
  *                                   **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** for **`kind=chrome`** only.
  *   PLAYWRIGHT_CHROMIUM_USER_DATA_DIR  If set, **non-Chrome** Chromium-family kinds (and **chrome** only if
@@ -569,37 +572,61 @@ function resolvedOrMirroredChromeUserDataDir(resolved) {
     throw new Error(`Chrome user-data path does not exist: ${resolved}`);
   }
   const mirror = CHROME_PLAYWRIGHT_MIRROR_DIR;
-  const refresh =
-    process.env.CHROME_PROFILE_REFRESH_MIRROR === '1' ||
-    process.env.CHROME_PROFILE_REFRESH_MIRROR === 'true';
+  const refreshRequested = (() => {
+    const v = trimEnv('CHROME_PROFILE_REFRESH_MIRROR');
+    return v === '1' || v === 'true';
+  })();
+  const skipAutoRemirror = (() => {
+    const v = trimEnv('CHROME_NO_AUTO_REMIRROR_ON_STALE');
+    return v === '1' || v === 'true';
+  })();
+
+  let refresh = refreshRequested;
+  if (!refresh && fs.existsSync(mirror) && !skipAutoRemirror) {
+    try {
+      const srcIds = maxChromeExtensionIdCount(resolved);
+      const mirIds = maxChromeExtensionIdCount(mirror);
+      if (srcIds > mirIds) {
+        refresh = true;
+        process.stderr.write(
+          `[chrome] Mirror is stale (${mirIds} vs ${srcIds} extension ID(s) under */Extensions); re-copying from live profile (set CHROME_NO_AUTO_REMIRROR_ON_STALE=1 to skip).\n`,
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   fs.mkdirSync(path.dirname(mirror), { recursive: true });
   if (!fs.existsSync(mirror) || refresh) {
     process.stderr.write(
-      `[chrome] Chrome blocks CDP on the default profile dir; mirroring once to:\n  ${mirror}\n` +
-        `Close all Chrome windows first (large profiles may take a minute).\n`,
+      `[chrome] Chrome blocks CDP on the default profile dir; mirroring to:\n  ${mirror}\n` +
+        `Close all Google Chrome windows first (large profiles may take a minute).\n`,
     );
     if (fs.existsSync(mirror)) {
       fs.rmSync(mirror, { recursive: true, force: true });
     }
-    fs.cpSync(resolved, mirror, { recursive: true });
+    removeChromeSingletonArtifacts(resolved);
+    fs.cpSync(resolved, mirror, { recursive: true, dereference: true });
+    try {
+      const postSrc = maxChromeExtensionIdCount(resolved);
+      const postMir = maxChromeExtensionIdCount(mirror);
+      process.stderr.write(
+        `[chrome] Mirror copy finished; extension ID count source=${postSrc} mirror=${postMir}.\n`,
+      );
+      if (postMir < postSrc) {
+        process.stderr.write(
+          `[chrome] Mirror still has fewer extension folders than the live profile. Quit every Chrome process, run with CHROME_PROFILE_REFRESH_MIRROR=1, or check disk space and permissions on ${mirror}.\n`,
+        );
+      }
+    } catch {
+      /* ignore */
+    }
   } else {
     process.stderr.write(
       `[chrome] Using existing mirrored profile ${mirror} (set CHROME_PROFILE_REFRESH_MIRROR=1 to re-copy from default).\n` +
         `[chrome] New extensions/settings in normal Chrome are not in the mirror until you re-copy (quit Chrome first).\n`,
     );
-    if (fs.existsSync(mirror)) {
-      try {
-        const srcIds = maxChromeExtensionIdCount(resolved);
-        const mirIds = maxChromeExtensionIdCount(mirror);
-        if (srcIds > mirIds) {
-          process.stderr.write(
-            `[chrome] Live profile has ${srcIds} extension ID(s) under */Extensions but the mirror has ${mirIds}; run once with CHROME_PROFILE_REFRESH_MIRROR=1 (quit all Chrome) to copy extensions into the mirror.\n`,
-          );
-        }
-      } catch {
-        /* ignore */
-      }
-    }
   }
   removeChromeSingletonArtifacts(mirror);
   return mirror;
