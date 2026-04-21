@@ -24,13 +24,15 @@
  *                     **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** applies only to **`chromium`**, **`brave`**, and **`opera`**.
  *                     When **off**, **`chrome`** ignores **`CHROME_DESKTOP_FILE`** and uses **`channel: 'chrome'`** (or path
  *                     fallback).
- *                     Headed **`chrome`** also uses **`launchPersistentContext`** and
- *                     **`~/.config/udi-payload-harvest/chromium-profile-chrome-show-automation/`** unless you already set
- *                     **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** or **`PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE`** — headed
- *                     ephemeral **`launch()`** often never draws the native yellow bar (Chromium/Playwright), even with
- *                     **`--enable-automation`**. (Skipped when **`HEADLESS`** is on — no UI infobar then.)
- *                     **`chrome`** without **`CHROME_USER_DATA_DIR`** passes **`--disable-extensions`** (Playwright’s default
- *                     too) for a minimal extension surface; set **`CHROME_USER_DATA_DIR`** to load extensions.
+ *                     Headed **`chrome`** with **`CHROME_SIMULATE_REAL_USER` off** may use **`launchPersistentContext`** and
+ *                     **`~/.config/udi-payload-harvest/chromium-profile-chrome-show-automation/`** when no explicit profile
+ *                     dir is set — headed ephemeral **`launch()`** often never draws the native yellow bar (Chromium/Playwright),
+ *                     even with **`--enable-automation`**. (Skipped when **`HEADLESS`** is on, or when **`CHROME_SIMULATE_REAL_USER`**
+ *                     is on — then headed **`chrome`** uses ephemeral **`launch()`** unless **`CHROME_USER_DATA_DIR`** /
+ *                     **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** / **`PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE`** supplies a dir.)
+ *                     **`--disable-extensions`** is **not** added when **`CHROME_SIMULATE_REAL_USER`** is on, when
+ *                     **`CHROME_USER_DATA_DIR`** / **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** is set, or when
+ *                     **`PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE`** is on — otherwise minimal-surface **`chrome`** adds it.
  *   CHROME_DESKTOP_FILE  Optional path to a Google Chrome **.desktop** file (e.g. Kasm:
  *                     **`/home/kasm-user/Desktop/google-chrome.desktop`**). Parses **`[Desktop Entry]`** **`Exec=`**, strips field codes (`%U`, …), and launches that **binary** via Playwright (not the `.desktop`
  *                     itself). Used only when **`CHROME_SIMULATE_REAL_USER`** is on; when set, **`chrome`** in UDIBROWSERS uses this path instead of **`channel: 'chrome'`**.
@@ -234,6 +236,18 @@ function trimEnv(name) {
   return String(v).trim();
 }
 
+/**
+ * When true, do not add **`--disable-extensions`** for Google Chrome so extensions can load from the active user-data dir.
+ */
+function chromeWantsExtensionSurface() {
+  if (CHROME_SIMULATE_REAL_USER) return true;
+  if (trimEnv('CHROME_USER_DATA_DIR')) return true;
+  if (trimEnv('PLAYWRIGHT_CHROMIUM_USER_DATA_DIR')) return true;
+  const flag = process.env.PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE;
+  if (flag === '1' || flag === 'true') return true;
+  return false;
+}
+
 /** Map `LANG` like `en_US.UTF-8` → Playwright `en-US` when PLAYWRIGHT_LOCALE is unset. */
 function inferredLocaleFromLang() {
   const lang = process.env.LANG || '';
@@ -276,12 +290,8 @@ function chromiumAutomationLaunchOpts(kind) {
     out.ignoreDefaultArgs = ['--enable-automation'];
     out.args = args;
   }
-  // Google Chrome without CHROME_USER_DATA_DIR: --disable-extensions unless a real profile is used (extensions must load).
-  if (
-    kind === 'chrome' &&
-    !chromiumEffectiveMitigations(kind) &&
-    !trimEnv('CHROME_USER_DATA_DIR')
-  ) {
+  // Google Chrome: optional --disable-extensions for a minimal surface (see header: chromeWantsExtensionSurface).
+  if (kind === 'chrome' && !chromiumEffectiveMitigations(kind) && !chromeWantsExtensionSurface()) {
     const extra = ['--disable-extensions'];
     out.args = out.args ? [...out.args, ...extra] : extra;
   }
@@ -464,7 +474,8 @@ function effectiveChromeUserDataDir() {
  * @returns {string | null}
  */
 function chromePersistentProfileForVisibleAutomation(kind) {
-  if (kind !== 'chrome' || HEADLESS) return null;
+  // With CHROME_SIMULATE_REAL_USER, prefer headed ephemeral launch (matches pre-change profile behavior; extensions need a real user-data dir via env).
+  if (kind !== 'chrome' || CHROME_SIMULATE_REAL_USER || HEADLESS) return null;
   return path.join(
     os.homedir(),
     '.config',
@@ -1763,11 +1774,15 @@ async function main() {
           `[chrome] CHROME_USER_DATA_DIR: extensions and settings load from this profile; quit other Chrome sessions using it if you see a profile lock error.\n`,
         );
       } else if (
-        trimEnv('CHROME_DESKTOP_FILE') &&
-        !(process.env.PLAYWRIGHT_CHROMIUM_USER_DATA_DIR || '').trim()
+        (CHROME_SIMULATE_REAL_USER || trimEnv('CHROME_DESKTOP_FILE')) &&
+        !trimEnv('PLAYWRIGHT_CHROMIUM_USER_DATA_DIR') &&
+        process.env.PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE !== '1' &&
+        process.env.PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE !== 'true'
       ) {
         process.stderr.write(
-          '[chrome] CHROME_DESKTOP_FILE sets the Chrome binary only. For extensions, set CHROME_USER_DATA_DIR to a copy of your profile (not ~/.config/google-chrome — Chrome blocks automation there); see README.\n',
+          '[chrome] Desktop-style launch uses an isolated Playwright profile unless you set a user-data dir. ' +
+            'For your installed extensions, set CHROME_USER_DATA_DIR to your Chrome profile path ' +
+            '(e.g. ~/.config/google-chrome on Linux — the script mirrors the default dir for CDP); or set PLAYWRIGHT_CHROMIUM_USER_DATA_DIR. See README.\n',
         );
       }
     }
