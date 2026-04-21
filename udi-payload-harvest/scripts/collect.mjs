@@ -29,10 +29,14 @@
  *                     dir is set — headed ephemeral **`launch()`** often never draws the native yellow bar (Chromium/Playwright),
  *                     even with **`--enable-automation`**. (Skipped when **`HEADLESS`** is on, or when **`CHROME_SIMULATE_REAL_USER`**
  *                     is on — then headed **`chrome`** uses ephemeral **`launch()`** unless **`CHROME_USER_DATA_DIR`** /
- *                     **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** / **`PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE`** supplies a dir.)
- *                     **`--disable-extensions`** is **not** added when **`CHROME_SIMULATE_REAL_USER`** is on, when
- *                     **`CHROME_USER_DATA_DIR`** / **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** is set, or when
- *                     **`PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE`** is on — otherwise minimal-surface **`chrome`** adds it.
+ *                     **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** / **`PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE`** /
+ *                     **`CHROME_SIMULATE_AUTO_PROFILE`** supplies a dir.)
+ *                     Playwright’s default Chromium args always include **`--disable-extensions`**; this script lists that
+ *                     switch in **`ignoreDefaultArgs`** when extensions should load (**`CHROME_SIMULATE_REAL_USER`**, or any
+ *                     explicit profile env above). Otherwise Google **`chrome`** keeps Playwright’s default minimal extension surface.
+ *   CHROME_SIMULATE_AUTO_PROFILE  Default **off**. With **`CHROME_SIMULATE_REAL_USER=1`** and **`CHROME_USER_DATA_DIR`**
+ *                     unset, set **`1`/`true`** to mirror the first existing **default** Google Chrome user-data directory
+ *                     (same paths as **`CHROME_USER_DATA_DIR`** default detection) so installed extensions are available.
  *   CHROME_DESKTOP_FILE  Optional path to a Google Chrome **.desktop** file (e.g. Kasm:
  *                     **`/home/kasm-user/Desktop/google-chrome.desktop`**). Parses **`[Desktop Entry]`** **`Exec=`**, strips field codes (`%U`, …), and launches that **binary** via Playwright (not the `.desktop`
  *                     itself). Used only when **`CHROME_SIMULATE_REAL_USER`** is on; when set, **`chrome`** in UDIBROWSERS uses this path instead of **`channel: 'chrome'`**.
@@ -205,6 +209,18 @@ const CHROME_SIMULATE_REAL_USER = (() => {
   return false;
 })();
 
+/**
+ * With **`CHROME_SIMULATE_REAL_USER`**, set **`1`/`true`** to mirror the first existing **default** Google Chrome
+ * user-data dir (same discovery as **`CHROME_USER_DATA_DIR`** default-path handling) when **`CHROME_USER_DATA_DIR`**
+ * is unset — loads installed extensions from the copy. **`0`/`false`** or unset: off.
+ */
+const CHROME_SIMULATE_AUTO_PROFILE = (() => {
+  const v = process.env.CHROME_SIMULATE_AUTO_PROFILE;
+  if (v === '0' || v === 'false') return false;
+  if (v === '1' || v === 'true') return true;
+  return false;
+})();
+
 /** When true, **`chrome`** may mask `navigator.plugins` / `mimeTypes` (see header: DISABLE_PLUGINS). */
 const DISABLE_PLUGINS = (() => {
   const v = process.env.DISABLE_PLUGINS;
@@ -237,7 +253,7 @@ function trimEnv(name) {
 }
 
 /**
- * When true, do not add **`--disable-extensions`** for Google Chrome so extensions can load from the active user-data dir.
+ * When true, strip Playwright’s default **`--disable-extensions`** (via **`ignoreDefaultArgs`**) so extensions can load.
  */
 function chromeWantsExtensionSurface() {
   if (CHROME_SIMULATE_REAL_USER) return true;
@@ -290,10 +306,15 @@ function chromiumAutomationLaunchOpts(kind) {
     out.ignoreDefaultArgs = ['--enable-automation'];
     out.args = args;
   }
-  // Google Chrome: optional --disable-extensions for a minimal surface (see header: chromeWantsExtensionSurface).
-  if (kind === 'chrome' && !chromiumEffectiveMitigations(kind) && !chromeWantsExtensionSurface()) {
-    const extra = ['--disable-extensions'];
-    out.args = out.args ? [...out.args, ...extra] : extra;
+  // Playwright’s default Chromium args always include --disable-extensions (playwright-core chromiumSwitches.js);
+  // it is not enough to omit it from `args` — it must be listed in `ignoreDefaultArgs` to be removed.
+  if (kind === 'chrome' && !chromiumEffectiveMitigations(kind) && chromeWantsExtensionSurface()) {
+    const allowExt = ['--disable-extensions'];
+    if (Array.isArray(out.ignoreDefaultArgs)) {
+      out.ignoreDefaultArgs = [...out.ignoreDefaultArgs, ...allowExt];
+    } else {
+      out.ignoreDefaultArgs = allowExt;
+    }
   }
   // Playwright’s default Chromium args always include --disable-infobars (see playwright-core chromiumSwitches),
   // which suppresses the “controlled by automated test software” infobar even when --enable-automation is present.
@@ -321,6 +342,15 @@ function resolvedChromiumUserDataDir(kind) {
     if (chromeOnly) {
       return effectiveChromeUserDataDir();
     }
+    if (CHROME_SIMULATE_REAL_USER && CHROME_SIMULATE_AUTO_PROFILE) {
+      const auto = findExistingDefaultChromeUserDataDir();
+      if (auto) {
+        process.stderr.write(
+          `[chrome] CHROME_SIMULATE_AUTO_PROFILE: mirroring system Chrome user-data from ${auto}\n`,
+        );
+        return resolvedOrMirroredChromeUserDataDir(auto);
+      }
+    }
   }
   const explicit = process.env.PLAYWRIGHT_CHROMIUM_USER_DATA_DIR;
   if (explicit != null && String(explicit).trim() !== '') {
@@ -338,19 +368,8 @@ function resolvedChromiumUserDataDir(kind) {
   return null;
 }
 
-/**
- * Chrome disallows CDP / `--remote-debugging-pipe` with the OS default user-data-dir (security).
- * @param {string} absDir
- * @returns {boolean}
- */
-function isDefaultGoogleChromeUserDataDir(absDir) {
-  let resolved;
-  try {
-    resolved = fs.realpathSync(absDir);
-  } catch {
-    resolved = path.resolve(absDir);
-  }
-  const r = resolved.toLowerCase();
+/** @returns {string[]} */
+function defaultGoogleChromeUserDataCandidates() {
   const h = os.homedir();
   const candidates = [
     path.join(h, '.config', 'google-chrome'),
@@ -366,7 +385,38 @@ function isDefaultGoogleChromeUserDataDir(absDir) {
       path.join(la, 'Google', 'Chrome SxS', 'User Data'),
     );
   }
-  for (const c of candidates) {
+  return candidates;
+}
+
+/**
+ * First existing OS-default Google Chrome user-data directory, if any.
+ * @returns {string | null}
+ */
+function findExistingDefaultChromeUserDataDir() {
+  for (const c of defaultGoogleChromeUserDataCandidates()) {
+    try {
+      if (fs.existsSync(c)) return fs.realpathSync(c);
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+/**
+ * Chrome disallows CDP / `--remote-debugging-pipe` with the OS default user-data-dir (security).
+ * @param {string} absDir
+ * @returns {boolean}
+ */
+function isDefaultGoogleChromeUserDataDir(absDir) {
+  let resolved;
+  try {
+    resolved = fs.realpathSync(absDir);
+  } catch {
+    resolved = path.resolve(absDir);
+  }
+  const r = resolved.toLowerCase();
+  for (const c of defaultGoogleChromeUserDataCandidates()) {
     try {
       if (!fs.existsSync(c)) continue;
       if (fs.realpathSync(c).toLowerCase() === r) return true;
@@ -424,24 +474,16 @@ function removeChromeSingletonArtifacts(userDataDir) {
 }
 
 /**
- * Resolve **`CHROME_USER_DATA_DIR`**: non-default paths unchanged; default OS profile → mirror copy for Playwright/CDP.
+ * Non-default paths unchanged; default OS profile → mirror copy for Playwright/CDP.
+ * @param {string} resolved absolute user-data-dir path
  * @returns {string}
  */
-function effectiveChromeUserDataDir() {
-  const raw = trimEnv('CHROME_USER_DATA_DIR');
-  if (!raw) {
-    throw new Error('effectiveChromeUserDataDir: empty CHROME_USER_DATA_DIR');
-  }
-  const resolved = path.resolve(
-    raw.startsWith('~') ? raw.replace(/^~(?=$|[/\\])/, os.homedir()) : raw,
-  );
+function resolvedOrMirroredChromeUserDataDir(resolved) {
   if (!isDefaultGoogleChromeUserDataDir(resolved)) {
     return resolved;
   }
   if (!fs.existsSync(resolved)) {
-    throw new Error(
-      `CHROME_USER_DATA_DIR default profile path does not exist: ${resolved}`,
-    );
+    throw new Error(`Chrome user-data path does not exist: ${resolved}`);
   }
   const mirror = CHROME_PLAYWRIGHT_MIRROR_DIR;
   const refresh =
@@ -465,6 +507,21 @@ function effectiveChromeUserDataDir() {
   }
   removeChromeSingletonArtifacts(mirror);
   return mirror;
+}
+
+/**
+ * Resolve **`CHROME_USER_DATA_DIR`**: non-default paths unchanged; default OS profile → mirror copy for Playwright/CDP.
+ * @returns {string}
+ */
+function effectiveChromeUserDataDir() {
+  const raw = trimEnv('CHROME_USER_DATA_DIR');
+  if (!raw) {
+    throw new Error('effectiveChromeUserDataDir: empty CHROME_USER_DATA_DIR');
+  }
+  const resolved = path.resolve(
+    raw.startsWith('~') ? raw.replace(/^~(?=$|[/\\])/, os.homedir()) : raw,
+  );
+  return resolvedOrMirroredChromeUserDataDir(resolved);
 }
 
 /**
@@ -1777,12 +1834,18 @@ async function main() {
         (CHROME_SIMULATE_REAL_USER || trimEnv('CHROME_DESKTOP_FILE')) &&
         !trimEnv('PLAYWRIGHT_CHROMIUM_USER_DATA_DIR') &&
         process.env.PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE !== '1' &&
-        process.env.PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE !== 'true'
+        process.env.PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE !== 'true' &&
+        !(
+          CHROME_SIMULATE_REAL_USER &&
+          CHROME_SIMULATE_AUTO_PROFILE &&
+          findExistingDefaultChromeUserDataDir()
+        )
       ) {
         process.stderr.write(
           '[chrome] Desktop-style launch uses an isolated Playwright profile unless you set a user-data dir. ' +
-            'For your installed extensions, set CHROME_USER_DATA_DIR to your Chrome profile path ' +
-            '(e.g. ~/.config/google-chrome on Linux — the script mirrors the default dir for CDP); or set PLAYWRIGHT_CHROMIUM_USER_DATA_DIR. See README.\n',
+            'For installed extensions: set CHROME_USER_DATA_DIR (e.g. ~/.config/google-chrome — mirrored for CDP), ' +
+            'or CHROME_SIMULATE_AUTO_PROFILE=1 with CHROME_SIMULATE_REAL_USER=1 to auto-mirror the default system Chrome profile, ' +
+            'or set PLAYWRIGHT_CHROMIUM_USER_DATA_DIR. See README.\n',
         );
       }
     }
