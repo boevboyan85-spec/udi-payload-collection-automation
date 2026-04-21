@@ -587,6 +587,19 @@ function resolvedOrMirroredChromeUserDataDir(resolved) {
       `[chrome] Using existing mirrored profile ${mirror} (set CHROME_PROFILE_REFRESH_MIRROR=1 to re-copy from default).\n` +
         `[chrome] New extensions/settings in normal Chrome are not in the mirror until you re-copy (quit Chrome first).\n`,
     );
+    if (fs.existsSync(mirror)) {
+      try {
+        const srcIds = maxChromeExtensionIdCount(resolved);
+        const mirIds = maxChromeExtensionIdCount(mirror);
+        if (srcIds > mirIds) {
+          process.stderr.write(
+            `[chrome] Live profile has ${srcIds} extension ID(s) under */Extensions but the mirror has ${mirIds}; run once with CHROME_PROFILE_REFRESH_MIRROR=1 (quit all Chrome) to copy extensions into the mirror.\n`,
+          );
+        }
+      } catch {
+        /* ignore */
+      }
+    }
   }
   removeChromeSingletonArtifacts(mirror);
   return mirror;
@@ -2032,10 +2045,12 @@ async function main() {
     }
 
     const chromiumKinds = new Set(['chrome', 'chromium', 'brave', 'opera']);
-    const userDataDir = chromiumKinds.has(kind)
-      ? resolvedChromiumUserDataDir(kind) ??
-        chromePersistentProfileForVisibleAutomation(kind)
+    const resolvedUserDataDir = chromiumKinds.has(kind)
+      ? resolvedChromiumUserDataDir(kind)
       : null;
+    const userDataDir =
+      resolvedUserDataDir ??
+      (chromiumKinds.has(kind) ? chromePersistentProfileForVisibleAutomation(kind) : null);
 
     if (userDataDir) {
       try {
@@ -2043,7 +2058,7 @@ async function main() {
         process.stderr.write(
           `[playwright] persistent Chromium userDataDir ${userDataDir}\n`,
         );
-        if (kind === 'chrome' && resolvedChromiumUserDataDir(kind) == null) {
+        if (kind === 'chrome' && resolvedUserDataDir == null) {
           process.stderr.write(
             '[chrome] Using this profile so the native automation infobar can appear (ephemeral launch usually does not show it).\n',
           );
