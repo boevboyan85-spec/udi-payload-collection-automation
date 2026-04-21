@@ -13,26 +13,24 @@
  *   COLLECTOR_URL     Default: https://gdtm-dev.globalsiteanalytics.com/kasm.html (#udip payload, #txId)
  *   HEADLESS          1/true for headless (default: false — use headed on KASM). Applies to **Chrome** and all Playwright
  *                     browsers; **Tor** (Selenium) uses Firefox **`-headless`** when set.
- *   DISABLE_PLUGINS   Default **off** (unset or 0/false). When **on** (1/true), non-stealth **`chrome`** injects empty
- *                     **`navigator.plugins` / `mimeTypes`** (see **`CHROME_SIMULATE_REAL_USER`**). Ignored for stealth Chrome.
+ *   DISABLE_PLUGINS   Default **off** (unset or 0/false). When **on** (1/true), **`chrome`** injects empty
+ *                     **`navigator.plugins` / `mimeTypes`** (and tries **`pdfViewerEnabled` → false** when configurable).
+ *                     For **`chromium`**, **`brave`**, and **`opera`**, skipped when **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** is on.
  *   CHROME_SIMULATE_REAL_USER  Default **off** (unset or 0/false). When **on** (1/true), **`chrome`** may use
- *                     **`CHROME_DESKTOP_FILE`** (if set) and the same Chromium stealth options as
- *                     **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** for that browser. When **off** (0/false),
- *                     **`chrome`** ignores **`CHROME_DESKTOP_FILE`**, launches via **`channel: 'chrome'`** (or path
- *                     fallback), and does **not** apply those mitigations — automation UI / **`--enable-automation`**
- *                     behave like stock Playwright. **`chromium`**, **`brave`**, **`opera`** are unchanged (still follow
- *                     **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** only). Playwright also defaults to **`--disable-infobars`**,
- *                     which hides the yellow automation bar; for **`chrome`**, that switch is removed when this flag is off
- *                     or when **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** is off so the infobar can show.
- *                     With this flag off, **`chrome`** also uses **`launchPersistentContext`** and
+ *                     **`CHROME_DESKTOP_FILE`** (if set): parses the **`.desktop`** **`Exec=`** and launches that **binary**
+ *                     via Playwright instead of **`channel: 'chrome'`**. Does **not** change automation signals: **Google
+ *                     Chrome** in this script always keeps stock Playwright automation (**`--enable-automation`**, no
+ *                     **`AutomationControlled`** bypass, infobar switch stripped when headed so the yellow bar can show).
+ *                     **`PLAYWRIGHT_AUTOMATION_MITIGATIONS`** applies only to **`chromium`**, **`brave`**, and **`opera`**.
+ *                     When **off**, **`chrome`** ignores **`CHROME_DESKTOP_FILE`** and uses **`channel: 'chrome'`** (or path
+ *                     fallback).
+ *                     Headed **`chrome`** also uses **`launchPersistentContext`** and
  *                     **`~/.config/udi-payload-harvest/chromium-profile-chrome-show-automation/`** unless you already set
  *                     **`PLAYWRIGHT_CHROMIUM_USER_DATA_DIR`** or **`PLAYWRIGHT_PERSISTENT_CHROMIUM_PROFILE`** — headed
  *                     ephemeral **`launch()`** often never draws the native yellow bar (Chromium/Playwright), even with
  *                     **`--enable-automation`**. (Skipped when **`HEADLESS`** is on — no UI infobar then.)
- *                     Non-stealth **`chrome`** also passes **`--disable-extensions`** (Playwright’s default too) for a minimal
- *                     extension surface; stealth **`chrome`** strips that default so the launch can align with interactive Chrome.
- *                     When **`DISABLE_PLUGINS=1`**, non-stealth **`chrome`** injects empty **`navigator.plugins`** /
- *                     **`navigator.mimeTypes`** (and tries **`pdfViewerEnabled` → false** when configurable).
+ *                     **`chrome`** without **`CHROME_USER_DATA_DIR`** passes **`--disable-extensions`** (Playwright’s default
+ *                     too) for a minimal extension surface; set **`CHROME_USER_DATA_DIR`** to load extensions.
  *   CHROME_DESKTOP_FILE  Optional path to a Google Chrome **.desktop** file (e.g. Kasm:
  *                     **`/home/kasm-user/Desktop/google-chrome.desktop`**). Parses **`[Desktop Entry]`** **`Exec=`**, strips field codes (`%U`, …), and launches that **binary** via Playwright (not the `.desktop`
  *                     itself). Used only when **`CHROME_SIMULATE_REAL_USER`** is on; when set, **`chrome`** in UDIBROWSERS uses this path instead of **`channel: 'chrome'`**.
@@ -65,10 +63,11 @@
  *                                   often causes SEC_ERROR_UNKNOWN_ISSUER without this.
  *   PLAYWRIGHT_MOZ_DISABLE_CONTENT_SANDBOX  Default on (unset or 1/true). Sets several MOZ_DISABLE_* env vars
  *                                   for Firefox / Tor Browser (Docker/Kasm user-namespace EPERM). Set 0/false off.
- *   PLAYWRIGHT_AUTOMATION_MITIGATIONS  Default on (unset or 1/true) for **Chromium-family** Playwright runs only.
- *                                   Drops **`--enable-automation`**, adds **`--disable-blink-features=AutomationControlled`**,
- *                                   **`--start-maximized`** when headed, and uses **`viewport: null`** when headed — reduces
- *                                   some automation / “devtools” heuristics (not a full anti-detect guarantee). Set 0/false off.
+ *   PLAYWRIGHT_AUTOMATION_MITIGATIONS  Default on (unset or 1/true) for **`chromium`**, **`brave`**, and **`opera`** only
+ *                                   (not **`chrome`**). Drops **`--enable-automation`**, adds
+ *                                   **`--disable-blink-features=AutomationControlled`**, **`--start-maximized`** when headed,
+ *                                   and uses **`viewport: null`** when headed — reduces some automation / “devtools”
+ *                                   heuristics (not a full anti-detect guarantee). Set 0/false off.
  *   PLAYWRIGHT_MASK_NAVIGATOR_WEBDRIVER  Default **off**. If 1/true, injects **`navigator.webdriver` → false** before page
  *                                   scripts — can flip “bot by web driver” but often triggers **“Override properties”** /
  *                                   **“Navigator own properties”** on strict fingerprint backends; leave off unless you need it.
@@ -195,8 +194,7 @@ const PLAYWRIGHT_AUTOMATION_MITIGATIONS = (() => {
 })();
 
 /**
- * Desktop-style Chrome launch + stealth bundle for **`chrome`** only (see header: CHROME_SIMULATE_REAL_USER).
- * Default **off**; set **`1`/`true`** or use **`collect.env`** for Kasm-style stealth.
+ * When on, **`chrome`** may use **`CHROME_DESKTOP_FILE`** to resolve the binary (see header).
  */
 const CHROME_SIMULATE_REAL_USER = (() => {
   const v = process.env.CHROME_SIMULATE_REAL_USER;
@@ -205,7 +203,7 @@ const CHROME_SIMULATE_REAL_USER = (() => {
   return false;
 })();
 
-/** When true, non-stealth Chrome masks `navigator.plugins` / `mimeTypes` (see header: DISABLE_PLUGINS). */
+/** When true, **`chrome`** may mask `navigator.plugins` / `mimeTypes` (see header: DISABLE_PLUGINS). */
 const DISABLE_PLUGINS = (() => {
   const v = process.env.DISABLE_PLUGINS;
   if (v === '1' || v === 'true') return true;
@@ -218,7 +216,8 @@ const DISABLE_PLUGINS = (() => {
  */
 function chromiumEffectiveMitigations(kind) {
   if (!PLAYWRIGHT_AUTOMATION_MITIGATIONS) return false;
-  if (kind === 'chrome' && !CHROME_SIMULATE_REAL_USER) return false;
+  // Google Chrome: always leave Playwright's automation flags / CDP behavior intact so downstream can detect automation.
+  if (kind === 'chrome') return false;
   return true;
 }
 
@@ -275,13 +274,9 @@ function chromiumAutomationLaunchOpts(kind) {
     const args = ['--disable-blink-features=AutomationControlled'];
     if (!HEADLESS) args.push('--start-maximized');
     out.ignoreDefaultArgs = ['--enable-automation'];
-    // Stealth Chrome only: do not use Playwright’s default --disable-extensions (keeps extension/plugin surface closer to normal Chrome).
-    if (kind === 'chrome') {
-      out.ignoreDefaultArgs = [...out.ignoreDefaultArgs, '--disable-extensions'];
-    }
     out.args = args;
   }
-  // Default (non-stealth) Google Chrome: --disable-extensions unless a real profile is used (extensions must load).
+  // Google Chrome without CHROME_USER_DATA_DIR: --disable-extensions unless a real profile is used (extensions must load).
   if (
     kind === 'chrome' &&
     !chromiumEffectiveMitigations(kind) &&
@@ -293,8 +288,7 @@ function chromiumAutomationLaunchOpts(kind) {
   // Playwright’s default Chromium args always include --disable-infobars (see playwright-core chromiumSwitches),
   // which suppresses the “controlled by automated test software” infobar even when --enable-automation is present.
   const chromeShowAutomationInfobar =
-    kind === 'chrome' &&
-    (!CHROME_SIMULATE_REAL_USER || !PLAYWRIGHT_AUTOMATION_MITIGATIONS);
+    kind === 'chrome' && !chromiumEffectiveMitigations(kind);
   if (chromeShowAutomationInfobar) {
     const strip = ['--disable-infobars'];
     if (Array.isArray(out.ignoreDefaultArgs)) {
@@ -470,7 +464,7 @@ function effectiveChromeUserDataDir() {
  * @returns {string | null}
  */
 function chromePersistentProfileForVisibleAutomation(kind) {
-  if (kind !== 'chrome' || CHROME_SIMULATE_REAL_USER || HEADLESS) return null;
+  if (kind !== 'chrome' || HEADLESS) return null;
   return path.join(
     os.homedir(),
     '.config',
@@ -498,7 +492,8 @@ async function addChromiumMitigationInitScript(context, kind) {
 }
 
 /**
- * Non-stealth Google Chrome only: `--disable-extensions` does not remove built-in PDF (etc.) from `navigator.plugins`.
+ * Google Chrome only (`chromiumEffectiveMitigations` is never used for **`chrome`**): `--disable-extensions` does not
+ * remove built-in PDF (etc.) from `navigator.plugins`.
  * Exposes empty PluginArray / MimeTypeArray-like objects before collector scripts run.
  * @param {import('playwright').BrowserContext} context
  * @param {string} kind
@@ -1800,13 +1795,9 @@ async function main() {
         process.stderr.write(
           `[playwright] persistent Chromium userDataDir ${userDataDir}\n`,
         );
-        if (
-          kind === 'chrome' &&
-          !CHROME_SIMULATE_REAL_USER &&
-          resolvedChromiumUserDataDir(kind) == null
-        ) {
+        if (kind === 'chrome' && resolvedChromiumUserDataDir(kind) == null) {
           process.stderr.write(
-            '[chrome] CHROME_SIMULATE_REAL_USER=0: using this profile so the native automation infobar can appear (ephemeral launch usually does not show it).\n',
+            '[chrome] Using this profile so the native automation infobar can appear (ephemeral launch usually does not show it).\n',
           );
         }
         const context = await launchPersistentChromiumContext(kind, userDataDir);

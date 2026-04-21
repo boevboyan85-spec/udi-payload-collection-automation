@@ -16,7 +16,7 @@
 # BRAVE_PATH / TOR_BROWSER_PATH: exported when brave exists or ~/tor-browser has Browser/firefox-bin (Gecko; not the firefox wrapper script).
 # UDIBROWSERS default: chrome,chromium,firefox,tor,brave (matches collect.mjs / run-kasm.sh).
 # Optional project file collect.env (see collect.env.example): UDIBROWSERS, CHROME_SIMULATE_REAL_USER, DISABLE_PLUGINS.
-# CHROME_SIMULATE_REAL_USER default off in collect.mjs; set 1/true + CHROME_DESKTOP_FILE for Kasm-style stealth Chrome.
+# CHROME_SIMULATE_REAL_USER default off in collect.mjs; set 1/true + CHROME_DESKTOP_FILE to launch that desktop binary.
 #
 # Installs Brave from the official APT repo (for UDIBROWSERS=brave). Set SKIP_BRAVE_APT=1 to skip.
 #
