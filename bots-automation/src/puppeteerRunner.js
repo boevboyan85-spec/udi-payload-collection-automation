@@ -3,8 +3,9 @@ import puppeteer from "puppeteer";
 import {
   resolveChromeBinaryPath,
   resolveChromiumBinaryPath,
+  resolveFirefoxBinaryPath,
 } from "./browserBinaries.js";
-import { chromiumNoSandboxArgs } from "./browserLaunchArgs.js";
+import { chromiumNoSandboxArgs, isChromiumNoSandbox } from "./browserLaunchArgs.js";
 import {
   TARGET_URL,
   PAYLOAD_ELEMENT_ID,
@@ -74,21 +75,30 @@ function buildLaunchOptions(browserKind, headless) {
   };
 
   if (browserKind === "firefox") {
-    // Chromium flags break Firefox; macOS --foreground can block clean shutdown when headed.
+    // Do not use PUPPETEER_EXECUTABLE_PATH here — that is for Chrome on Kasm.
     if (process.platform === "darwin" && !headless) {
       launchOptions.ignoreDefaultArgs = ["--foreground"];
     }
-    // Prefer Puppeteer's bundled Firefox (BiDi). Override only when explicitly set.
-    const fromEnv =
+    const firefoxBin =
       process.env.PUPPETEER_FIREFOX_EXECUTABLE_PATH ||
-      process.env.PUPPETEER_EXECUTABLE_PATH;
-    if (fromEnv && String(fromEnv).trim()) {
-      launchOptions.executablePath = String(fromEnv).trim();
+      process.env.FIREFOX_BIN ||
+      resolveFirefoxBinaryPath();
+    if (firefoxBin) {
+      launchOptions.executablePath = String(firefoxBin).trim();
+    }
+    if (isChromiumNoSandbox()) {
+      launchOptions.extraPrefsFirefox = {
+        "security.sandbox.content.level": 0,
+      };
+      process.env.MOZ_DISABLE_CONTENT_SANDBOX = "1";
     }
   } else {
     launchOptions.args = ["--window-size=1280,900", ...chromiumNoSandboxArgs()];
-    const chromeBin = resolveChromeBinaryPath();
-    if (chromeBin) launchOptions.executablePath = chromeBin;
+    const chromeBin =
+      process.env.PUPPETEER_EXECUTABLE_PATH ||
+      process.env.CHROME_BIN ||
+      resolveChromeBinaryPath();
+    if (chromeBin) launchOptions.executablePath = String(chromeBin).trim();
   }
 
   return launchOptions;
