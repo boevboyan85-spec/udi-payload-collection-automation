@@ -30,7 +30,7 @@ GIT_USER_NAME="Boyan Boev"
 GIT_USER_EMAIL="boev.boyan85@gmail.com"
 GITHUB_USERNAME="${GITHUB_USERNAME:-boyan.boev85-spec}"
 # Embedded for local/test VM use only; env GITHUB_TOKEN wins if set.
-GITHUB_TOKEN="${GITHUB_TOKEN:-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}"
+GITHUB_TOKEN="${GITHUB_TOKEN:-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}"
 REPO_SLUG="boevboyan85-spec/udi-payload-collection-automation"
 HARVEST_DIR_NAME="udi-payload-harvest"
 
