@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>document.hasFocus &amp; visibilityState</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+        color: #1a1a1a;
+        background: #f4f4f5;
+      }
+      body {
+        max-width: 36rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      h1 {
+        font-size: 1.125rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+      }
+      p.hint {
+        font-size: 0.875rem;
+        color: #52525b;
+        margin-bottom: 1.25rem;
+      }
+      .panel {
+        background: #fff;
+        border: 1px solid #e4e4e7;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      }
+      dl {
+        margin: 0;
+        display: grid;
+        gap: 0.75rem;
+      }
+      dt {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #71717a;
+      }
+      dd {
+        margin: 0;
+        font-family: ui-monospace, monospace;
+        font-size: 1rem;
+      }
+      .ts {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid #e4e4e7;
+        font-size: 0.8125rem;
+        color: #71717a;
+      }
+      button {
+        margin-top: 1rem;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.875rem;
+        cursor: pointer;
+        border: 1px solid #d4d4d8;
+        border-radius: 6px;
+        background: #fafafa;
+      }
+      button:hover {
+        background: #f4f4f5;
+      }
+      .actions {
+        margin-top: 1rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      .actions button {
+        margin-top: 0;
+      }
+      p.note {
+        font-size: 0.75rem;
+        color: #71717a;
+        margin-top: 0.75rem;
+        margin-bottom: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Focus &amp; visibility (every 5s)</h1>
+    <p class="hint">
+      Switch tabs or windows to see <code>document.hasFocus()</code> and
+      <code>document.visibilityState</code> change. Use “Check now” for an immediate read.
+    </p>
+    <div class="panel">
+      <dl>
+        <dt>document.hasFocus()</dt>
+        <dd id="hasFocus">—</dd>
+        <dt>document.visibilityState</dt>
+        <dd id="visibilityState">—</dd>
+      </dl>
+      <p class="ts" id="lastUpdate">Last update: —</p>
+      <div class="actions">
+        <button type="button" id="checkNow">Check now</button>
+        <button type="button" id="openBackground">
+          Open same page in new tab (keep this tab active)
+        </button>
+      </div>
+      <p class="note">
+        “Keep this tab active” uses <code>window.focus()</code> on this window after opening.
+        Some browsers may still switch to the new tab depending on settings.
+      </p>
+    </div>
+
+    <script>
+      const elFocus = document.getElementById("hasFocus");
+      const elVis = document.getElementById("visibilityState");
+      const elTs = document.getElementById("lastUpdate");
+
+      function render() {
+        elFocus.textContent = String(document.hasFocus());
+        elVis.textContent = document.visibilityState;
+        elTs.textContent =
+          "Last update: " +
+          new Date().toLocaleString(undefined, {
+            hour12: true,
+            fractionalSecondDigits: 3,
+          });
+      }
+
+      render();
+      setInterval(render, 5000);
+
+      document.getElementById("checkNow").addEventListener("click", render);
+
+      document.getElementById("openBackground").addEventListener("click", () => {
+        const url = window.location.href;
+        // noopener: new tab may not get a Window reference (often null), but tab still opens
+        window.open(url, "_blank", "noopener,noreferrer");
+        window.focus();
+        requestAnimationFrame(() => window.focus());
+        setTimeout(() => window.focus(), 0);
+      });
+
+      document.addEventListener("visibilitychange", render);
+      window.addEventListener("focus", render);
+      window.addEventListener("blur", render);
+    </script>
+  </body>
+</html>

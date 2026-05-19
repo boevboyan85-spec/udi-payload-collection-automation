@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Replaced by scripts/serve-collector.mjs with JSON from the incoming HTTP request -->
+    <script>
+      window.__HTTP_REQUEST_HEADERS__ = __REQUEST_HEADERS_JSON__;
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Universal Device Intelligence — Collector</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --page-bg: #eceef2;
+        --header-bg: #ffffff;
+        --accent-purple: #a3238e;
+        --text-primary: #3d4554;
+        --text-muted: #7a8699;
+        --border: #d8dce3;
+        --border-input: #c5cad3;
+        --btn-blue: #0071ad;
+        --btn-blue-hover: #005a8c;
+        --divider-gray: #e2e5ea;
+        font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        line-height: 1.5;
+        color: var(--text-primary);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--page-bg);
+      }
+
+      /* —— Header —— */
+      .site-header {
+        background: var(--header-bg);
+      }
+
+      .site-header-inner {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 1rem 1.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+
+      .site-header-brand {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        min-width: 0;
+      }
+
+      .logo-header {
+        display: block;
+        height: 2rem;
+        width: auto;
+        flex-shrink: 0;
+      }
+
+      .header-divider {
+        width: 1px;
+        height: 2rem;
+        background: var(--border);
+        flex-shrink: 0;
+      }
+
+      .header-title {
+        font-size: 1.0625rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        letter-spacing: -0.01em;
+        margin: 0;
+        line-height: 1.3;
+      }
+
+      .env-pill {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+        flex-shrink: 0;
+      }
+
+      .header-accent-line {
+        height: 3px;
+        width: 100%;
+        background: var(--accent-purple);
+      }
+
+      /* —— Main content (no card chrome; flat on page background) —— */
+      .site-main {
+        min-height: calc(100vh - 5rem);
+      }
+
+      .main-inner {
+        max-width: 72rem;
+        margin: 0 auto;
+        padding: 2rem 1.5rem 3rem;
+      }
+
+      .section-heading {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0 0 0.75rem;
+        line-height: 1.3;
+      }
+
+      .section-lede {
+        margin: 0 0 1.5rem;
+        max-width: 48rem;
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        line-height: 1.55;
+      }
+
+      .section-lede code {
+        font-size: 0.8125rem;
+        padding: 0.1rem 0.35rem;
+        border-radius: 3px;
+        background: #f4f5f7;
+        border: 1px solid var(--divider-gray);
+      }
+
+      .form-field {
+        margin-bottom: 0;
+      }
+
+      .form-field label {
+        display: block;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        margin-bottom: 0.4rem;
+      }
+
+      textarea {
+        width: 100%;
+        max-width: 100%;
+        min-height: 14rem;
+        font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+        font-size: 0.75rem;
+        line-height: 1.45;
+        padding: 0.65rem 0.75rem;
+        border-radius: 4px;
+        border: 1px solid var(--border-input);
+        background: #ffffff;
+        color: var(--text-primary);
+        resize: vertical;
+      }
+
+      textarea:focus {
+        outline: 2px solid rgba(0, 113, 173, 0.35);
+        outline-offset: 1px;
+        border-color: var(--btn-blue);
+      }
+
+      .btn-primary {
+        display: inline-block;
+        margin-top: 1rem;
+        padding: 0.5rem 1.25rem;
+        background: var(--btn-blue);
+        color: #ffffff;
+        border: none;
+        border-radius: 4px;
+        font-family: inherit;
+        font-size: 0.9375rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .btn-primary:hover {
+        background: var(--btn-blue-hover);
+      }
+
+      @media (max-width: 520px) {
+        .header-title {
+          font-size: 0.95rem;
+        }
+
+        .site-header-inner {
+          flex-wrap: wrap;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header" role="banner">
+      <div class="site-header-inner">
+        <div class="site-header-brand">
+          <img
+            class="logo-header"
+            src="experian-logo.svg"
+            width="100"
+            height="32"
+            alt="Experian"
+            decoding="async"
+          />
+          <span class="header-divider" aria-hidden="true"></span>
+          <h1 class="header-title">Universal Device Intelligence — Collector</h1>
+        </div>
+        <span class="env-pill">Local</span>
+      </div>
+      <div class="header-accent-line" role="presentation"></div>
+    </header>
+
+    <main class="site-main" id="main">
+      <div class="main-inner">
+        <h2 class="section-heading">Payload</h2>
+        <p class="section-lede">
+          The textarea is JSON: <code>{ "headers": { … }, "payload": "&lt;UDI base64&gt;" }</code> — request headers
+          (from <code>serve-collector</code> injection or refresh) plus the compressed UDI task array. Bots and
+          <code>npm run report:risk</code> read the inner <code>payload</code> string. When
+          <code>COLLECTOR_URL</code> is unset, <code>npm run collect</code> starts this app automatically.
+        </p>
+        <div class="form-field">
+          <form id="form" method="post"></form>
+          <label id="textareaPayloadLabel" for="textareaPayload">
+            <b>Collected Payload:</b>
+          </label>
+          <br />
+          
+          <textarea class="textareaPayload" id="textareaPayload" name="textareaPayload" rows="10" cols="20" style="text-align: left;">
+          </textarea>
+          
+          <br />
+          <button class="btn-primary" id="btnSavePayload" type="button">Save payload to CSV</button>
+          <span id="saveStatus" style="margin-left: 0.75rem; font-size: 0.875rem; color: var(--text-muted);"></span>
+        </div>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+    <script>
+      (function () {
+
+        function bytesToBase64(bytes) {
+          var bin = "";
+          var chunk = 8192;
+          for (var i = 0; i < bytes.length; i += chunk) {
+            bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+          }
+          return btoa(bin);
+        }
+
+        function getRequestHeadersRecord(useFetch) {
+          return new Promise(function (resolve) {
+            if (useFetch) {
+              fetch("/__collector/request-headers.json", { cache: "no-store" })
+                .then(function (r) {
+                  return r.ok ? r.json() : null;
+                })
+                .then(function (j) {
+                  if (j && typeof j === "object") {
+                    resolve(j);
+                    return;
+                  }
+                  resolve(window.__HTTP_REQUEST_HEADERS__ || {});
+                })
+                .catch(function () {
+                  resolve(window.__HTTP_REQUEST_HEADERS__ || {});
+                });
+              return;
+            }
+            resolve(window.__HTTP_REQUEST_HEADERS__ || {});
+          });
+        }
+
+        function setTextareaEnvelope(headers, payload) {
+          var envelope = { headers: headers, payload: payload };
+          document.getElementById("textareaPayload").value = JSON.stringify(
+            envelope,
+            null,
+            2
+          );
+        }
+
+        window.collectPayload = function (payload) {
+          getRequestHeadersRecord(false).then(function (headers) {
+            debugger;
+            setTextareaEnvelope(headers, payload);
+          });
+        };
+
+        function setSaveStatus(msg, isError) {
+          var el = document.getElementById("saveStatus");
+          el.textContent = msg || "";
+          el.style.color = isError ? "#b91c1c" : "var(--text-muted)";
+        }
+
+        function saveTextareaToCsv() {
+          var textarea = document.getElementById("textareaPayload");
+          var value = (textarea && textarea.value ? textarea.value : "").trim();
+          if (!value) {
+            setSaveStatus("Nothing to save (payload empty).", true);
+            return;
+          }
+          setSaveStatus("Saving…", false);
+          fetch("/__collector/save-payload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ textarea: value }),
+          })
+            .then(function (r) {
+              return r
+                .json()
+                .catch(function () {
+                  return { ok: false, error: "Non-JSON response" };
+                })
+                .then(function (j) {
+                  return { status: r.status, ok: r.ok, body: j };
+                });
+            })
+            .then(function (out) {
+              if (!out.ok || !out.body || out.body.ok === false) {
+                setSaveStatus(
+                  "Save failed: " + (out.body && out.body.error ? out.body.error : "HTTP " + out.status),
+                  true
+                );
+                return;
+              }
+              setSaveStatus(
+                "Saved to " + (out.body.csvPath || "results/payloads.csv") + " as type=human.",
+                false
+              );
+            })
+            .catch(function (e) {
+              setSaveStatus("Save failed: " + (e && e.message ? e.message : String(e)), true);
+            });
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+          var btn = document.getElementById("btnSavePayload");
+          if (btn) {
+            btn.addEventListener("click", saveTextareaToCsv);
+          }
+        });
+      })();
+    </script>
+
+    <script type="text/javascript">
+      function scCollect(configuration = {}) {
+        (function (x, p, e, r, i, a, n) {
+          a = p.createElement(e);
+          a.src = r;
+          a.async = 1;
+          n = p.getElementsByTagName(e)[0];
+          n.parentNode.insertBefore(a, n);
+          a.onload = i;
+        })(window, document, "script", "udi-collector-jsc-1.4.0-0-SNAPSHOT.js", function () {
+          scj.sc(configuration);
+        });
+      }
+
+      scCollect({
+        payloadCallback: function (payload) {
+          console.log("collectPayload = " + payload);
+          window.collectPayload(payload);
+        },
+      });
+    </script>
+  </body>
+</html>

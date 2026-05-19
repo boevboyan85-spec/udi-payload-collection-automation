@@ -1,0 +1,40 @@
+{
+  "name": "bots-automation",
+  "version": "1.0.0",
+  "description": "Cross-browser UDI collector runs (Puppeteer, Playwright, Selenium, TestCafe), CSV output, and optional risk-service Markdown/JSON/PDF reports. Configuration: copy .env.example to .env.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "collect": "node scripts/run-with-collector.mjs",
+    "collect:direct": "node src/index.js",
+    "start": "npm run collect && npm run report",
+    "serve:collector": "node scripts/serve-collector.mjs",
+    "install:deps": "PUPPETEER_SKIP_DOWNLOAD=1 npm install",
+    "install:deps:insecure-tls": "NODE_TLS_REJECT_UNAUTHORIZED=0 npm install",
+    "install:browsers": "node scripts/install-browsers.mjs",
+    "install:browsers:ubuntu": "bash scripts/install-os-browsers-ubuntu.sh",
+    "report": "npm run report:risk && npm run report:identifiers && npm run report:risk:indicators && npm run report:risk:with-isbot-matrix-pdf && npm run export:xlsx",
+    "report:risk": "node scripts/report-risk-from-csv.mjs",
+    "report:risk:isbot-matrix-pdf": "node scripts/isbot-matrix-to-pdf.mjs",
+    "report:risk:with-isbot-matrix-pdf": "npm run report:risk && npm run report:risk:isbot-matrix-pdf",
+    "report:identifiers": "node scripts/report-identifiers-from-csv.mjs",
+    "report:risk:indicators": "node scripts/report-risk-indicators-from-csv.mjs",
+    "export:xlsx": "node scripts/export-reports-to-xlsx.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "csv-parse": "^5.6.0",
+    "dotenv": "^17.4.2",
+    "pako": "^2.1.0",
+    "playwright": "^1.50.0",
+    "puppeteer": "^24.0.0",
+    "selenium-webdriver": "^4.43.0",
+    "testcafe": "^3.7.4",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "md-to-pdf": "^5.2.5"
+  }
+}
