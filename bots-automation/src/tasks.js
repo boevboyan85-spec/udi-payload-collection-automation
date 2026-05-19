@@ -15,6 +15,7 @@ import { getPlatformProfile } from "./platform.js";
 import { runPuppeteerChrome, runPuppeteerChromium, runPuppeteerFirefox } from "./puppeteerRunner.js";
 import {
   runPlaywrightChromium,
+  runPlaywrightEdge,
   runPlaywrightFirefox,
   runPlaywrightWebkit,
 } from "./playwrightRunner.js";
@@ -135,6 +136,7 @@ export function buildTaskList() {
   // —— Edge (Ubuntu / Linux / Windows) ——
   if (profile.edge) {
     if (hasEdge) {
+      addBrowserTasks(tasks, dual, "Playwright", "Edge", runPlaywrightEdge);
       addBrowserTasks(tasks, dual, "TestCafe", "Edge", runTestcafeEdge);
       addBrowserTasks(tasks, dual, "Selenium", "Edge", runSeleniumEdge);
     } else {

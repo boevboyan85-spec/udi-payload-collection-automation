@@ -143,6 +143,12 @@ export function resolveEdgeBinaryPath() {
     if (fs.existsSync(p)) return p;
   }
 
+  if (process.platform === "darwin") {
+    return firstExisting([
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    ]);
+  }
+
   if (process.platform === "win32") {
     const pf = process.env.PROGRAMFILES || "C:\\Program Files";
     return firstExisting([
@@ -151,11 +157,32 @@ export function resolveEdgeBinaryPath() {
     ]);
   }
 
-  return firstExisting([
+  const fromPath = firstExisting([
     "/usr/bin/microsoft-edge-stable",
     "/usr/bin/microsoft-edge",
+    "/usr/local/bin/microsoft-edge",
     "/opt/microsoft/msedge/msedge",
   ]);
+  if (fromPath) return fromPath;
+
+  for (const cmd of [
+    "microsoft-edge-stable",
+    "microsoft-edge",
+    "msedge",
+  ]) {
+    try {
+      const out = execSync(`command -v ${cmd}`, {
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "ignore"],
+      }).trim();
+      const line = out.split(/\r?\n/)[0];
+      if (line && fs.existsSync(line)) return line;
+    } catch {
+      // not on PATH
+    }
+  }
+
+  return "";
 }
 
 /** @returns {boolean} */

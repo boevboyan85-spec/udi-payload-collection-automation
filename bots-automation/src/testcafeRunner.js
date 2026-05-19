@@ -8,6 +8,7 @@ import {
   TARGET_URL,
   resolveHeadless,
 } from "./config.js";
+import { formatTestcafeBrowserString } from "./testcafeBrowser.js";
 import { getTestcafeRunTimeouts } from "./testcafeTimeouts.js";
 import { getDocumentFocusCsvColumnsFromEncodedUdi } from "./udiDecompress.js";
 
@@ -25,7 +26,7 @@ async function runTestcafe(browserArg) {
     `bots-tc-payload-${Date.now()}-${browserArg}.txt`
   );
   const headless = resolveHeadless("TESTCAFE_HEADLESS");
-  const tcBrowser = headless ? `${browserArg}:headless` : browserArg;
+  const tcBrowser = formatTestcafeBrowserString(browserArg, headless);
   const timeouts = getTestcafeRunTimeouts(browserArg, headless);
 
   const prev = {

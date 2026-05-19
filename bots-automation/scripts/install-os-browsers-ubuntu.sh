@@ -92,6 +92,18 @@ install_chromium
 install_google_chrome
 install_microsoft_edge
 
+link_microsoft_edge_alias() {
+  if command -v microsoft-edge-stable >/dev/null 2>&1 && ! command -v microsoft-edge >/dev/null 2>&1; then
+    local target
+    target="$(command -v microsoft-edge-stable)"
+    if ln -sf "$target" /usr/local/bin/microsoft-edge 2>/dev/null; then
+      echo "microsoft-edge: linked /usr/local/bin/microsoft-edge -> $target"
+    fi
+  fi
+}
+
+link_microsoft_edge_alias
+
 echo ""
 echo "Installed (or present):"
 command -v google-chrome-stable 2>/dev/null && google-chrome-stable --version || true

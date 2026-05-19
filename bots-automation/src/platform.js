@@ -61,8 +61,8 @@ export function getPlatformProfile(platform = resolveBotsPlatform()) {
     webkit: isMac,
     /** TestCafe / Selenium Safari (macOS only). */
     safari: isMac,
-    /** Microsoft Edge — common on Ubuntu (.deb); optional on macOS if installed. */
-    edge: isUbuntuLike || platform === "win32",
+    /** Microsoft Edge — Ubuntu .deb, Windows, or macOS if installed. */
+    edge: isUbuntuLike || platform === "win32" || platform === "macos",
 
     /** Playwright browsers to download in `npm run install:browsers`. */
     playwrightBrowsers: isMac ? ["chromium", "firefox", "webkit"] : ["chromium", "firefox"],

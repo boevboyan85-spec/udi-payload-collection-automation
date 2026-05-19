@@ -1,5 +1,6 @@
 import { chromium, firefox, webkit } from "playwright";
 
+import { resolveEdgeBinaryPath } from "./browserBinaries.js";
 import { chromiumNoSandboxArgs } from "./browserLaunchArgs.js";
 import {
   TARGET_URL,
@@ -15,14 +16,13 @@ const SELECTOR = `#${PAYLOAD_ELEMENT_ID}`;
 /**
  * @param {import('playwright').BrowserType} browserType
  * @param {string} browserLabel
- * @param {boolean} [chromiumBased]
+ * @param {import('playwright').LaunchOptions} [launchOverrides]
  */
-async function runPlaywright(browserType, browserLabel, chromiumBased = false) {
+async function runPlaywright(browserType, browserLabel, launchOverrides = {}) {
   const headless = resolveHeadless("PLAYWRIGHT_HEADLESS");
-  const extraArgs = chromiumBased ? chromiumNoSandboxArgs() : [];
   const browser = await browserType.launch({
     headless,
-    args: extraArgs.length ? extraArgs : undefined,
+    ...launchOverrides,
   });
   try {
     const context = await browser.newContext({
@@ -55,6 +55,34 @@ async function runPlaywright(browserType, browserLabel, chromiumBased = false) {
   }
 }
 
-export const runPlaywrightChromium = () => runPlaywright(chromium, "chromium", true);
+function chromiumLaunchOptions() {
+  const extraArgs = chromiumNoSandboxArgs();
+  return extraArgs.length ? { args: extraArgs } : {};
+}
+
+export const runPlaywrightChromium = () =>
+  runPlaywright(chromium, "chromium", chromiumLaunchOptions());
+
 export const runPlaywrightFirefox = () => runPlaywright(firefox, "firefox");
+
+export function runPlaywrightEdge() {
+  const edgeBin = resolveEdgeBinaryPath();
+  const launchOptions = chromiumLaunchOptions();
+  if (process.platform === "linux" || process.platform === "win32") {
+    if (!edgeBin) {
+      return Promise.reject(
+        new Error(
+          "Microsoft Edge binary not found. On Ubuntu run: npm run install:browsers or set EDGE_BIN."
+        )
+      );
+    }
+    launchOptions.executablePath = edgeBin;
+  } else if (edgeBin) {
+    launchOptions.executablePath = edgeBin;
+  } else {
+    launchOptions.channel = "msedge";
+  }
+  return runPlaywright(chromium, "edge", launchOptions);
+}
+
 export const runPlaywrightWebkit = () => runPlaywright(webkit, "webkit");
