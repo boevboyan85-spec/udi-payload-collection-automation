@@ -13,6 +13,7 @@
     "install:deps:insecure-tls": "NODE_TLS_REJECT_UNAUTHORIZED=0 npm install",
     "install:browsers": "node scripts/install-browsers.mjs",
     "install:browsers:ubuntu": "bash scripts/install-os-browsers-ubuntu.sh",
+    "push:github": "bash scripts/push-to-github.sh",
     "report": "npm run report:risk && npm run report:identifiers && npm run report:risk:indicators && npm run report:risk:with-isbot-matrix-pdf && npm run export:xlsx",
     "report:risk": "node scripts/report-risk-from-csv.mjs",
     "report:risk:isbot-matrix-pdf": "node scripts/isbot-matrix-to-pdf.mjs",

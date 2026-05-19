@@ -49,6 +49,24 @@ npm run install:browsers
 
 On **Ubuntu/Kasm**, `install:browsers` runs `scripts/install-os-browsers-ubuntu.sh` (apt: Firefox, Chromium, Google Chrome, Microsoft Edge when available) and `playwright install chromium firefox` plus Linux deps. On **macOS**, it installs Playwright **chromium, firefox, webkit** only (use system Chrome/Safari for other tools).
 
+**Kasm one-shot setup** (clone monorepo, apt browsers, npm, git credentials for test env):
+
+```bash
+bash setup-kasm-ubuntu.sh
+cd ~/Documents/git/udi-payload-collection-automation/bots-automation
+cp .env.example .env
+./run-kasm.sh
+```
+
+**Push to GitHub** (`develop` on `boevboyan85-spec/udi-payload-collection-automation`):
+
+```bash
+npm run push:github
+# or: bash scripts/push-to-github.sh "your commit message"
+```
+
+Git credentials match **`udi-payload-harvest`**: embedded PAT in `setup-kasm-ubuntu.sh`, persisted to `~/.config/bots-automation/git-push.env`.
+
 ### Corporate TLS / Puppeteer Chrome download
 
 If `npm install` fails on Puppeteer with certificate errors, use `install:deps` and set **`PUPPETEER_EXECUTABLE_PATH`** to a local Chrome binary, then `npm run install:browsers`. See inline comments in `.env.example` and prior troubleshooting below if needed.
