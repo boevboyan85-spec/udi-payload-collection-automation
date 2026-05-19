@@ -1,6 +1,12 @@
 import { execSync } from "child_process";
 import fs from "fs";
 
+import {
+  isRunnableChromiumBinary,
+  isSnapChromiumStub,
+  resolvePlaywrightChromiumBinaryPath,
+} from "./chromiumBinary.js";
+
 /**
  * @param {string[]} paths
  * @returns {string}
@@ -47,7 +53,7 @@ export function resolveChromeBinaryPath() {
 }
 
 /**
- * System Chromium (not Playwright's bundled build).
+ * System or Playwright Chromium (skips Ubuntu snap stub at chromium-browser).
  * @returns {string}
  */
 export function resolveChromiumBinaryPath() {
@@ -57,26 +63,47 @@ export function resolveChromiumBinaryPath() {
     process.env.PUPPETEER_CHROMIUM_EXECUTABLE_PATH;
   if (fromEnv && String(fromEnv).trim()) {
     const p = String(fromEnv).trim();
-    if (fs.existsSync(p)) return p;
+    if (isRunnableChromiumBinary(p)) return p;
   }
+
+  /** @type {string[]} */
+  const candidates = [];
 
   if (process.platform === "darwin") {
-    return firstExisting([
-      "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    ]);
+    candidates.push("/Applications/Chromium.app/Contents/MacOS/Chromium");
+  } else if (process.platform === "win32") {
+    candidates.push(
+      `${process.env.LOCALAPPDATA || ""}\\Chromium\\Application\\chrome.exe`
+    );
+  } else {
+    candidates.push(
+      "/usr/bin/chromium",
+      "/usr/bin/chromium-browser",
+      "/snap/bin/chromium"
+    );
+    for (const cmd of ["chromium", "chromium-browser"]) {
+      try {
+        const out = execSync(`command -v ${cmd}`, {
+          encoding: "utf8",
+          stdio: ["pipe", "pipe", "ignore"],
+        }).trim();
+        const line = out.split(/\r?\n/)[0];
+        if (line) candidates.push(line);
+      } catch {
+        // not on PATH
+      }
+    }
   }
 
-  if (process.platform === "win32") {
-    return firstExisting([
-      `${process.env.LOCALAPPDATA || ""}\\Chromium\\Application\\chrome.exe`,
-    ]);
+  const seen = new Set();
+  for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate)) continue;
+    seen.add(candidate);
+    if (isSnapChromiumStub(candidate)) continue;
+    if (isRunnableChromiumBinary(candidate)) return candidate;
   }
 
-  return firstExisting([
-    "/usr/bin/chromium-browser",
-    "/usr/bin/chromium",
-    "/snap/bin/chromium",
-  ]);
+  return resolvePlaywrightChromiumBinaryPath();
 }
 
 /**

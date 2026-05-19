@@ -3,6 +3,7 @@ import puppeteer from "puppeteer";
 import {
   resolveChromeBinaryPath,
   resolveChromiumBinaryPath,
+  resolveEdgeBinaryPath,
   resolveFirefoxBinaryPath,
 } from "./browserBinaries.js";
 import { chromiumNoSandboxArgs, isChromiumNoSandbox } from "./browserLaunchArgs.js";
@@ -161,9 +162,22 @@ export function runPuppeteerChromium() {
   if (!chromiumBin) {
     return Promise.reject(
       new Error(
-        "Chromium binary not found. On Ubuntu run: npm run install:browsers (installs system Chromium) or set CHROMIUM_BIN."
+        "Chromium binary not found. On Ubuntu run: npm run install:browsers (Playwright Chromium) or set CHROMIUM_BIN."
       )
     );
   }
   return runPuppeteer("chrome", "chromium", chromiumBin);
+}
+
+/** Edge is Chromium-based; Puppeteer launches it via the Chrome protocol. */
+export function runPuppeteerEdge() {
+  const edgeBin = resolveEdgeBinaryPath();
+  if (!edgeBin) {
+    return Promise.reject(
+      new Error(
+        "Microsoft Edge binary not found. On Ubuntu run: npm run install:browsers or set EDGE_BIN."
+      )
+    );
+  }
+  return runPuppeteer("chrome", "edge", edgeBin);
 }

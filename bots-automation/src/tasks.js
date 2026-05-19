@@ -12,7 +12,12 @@ import {
   isFirefoxAvailable,
 } from "./browserBinaries.js";
 import { getPlatformProfile } from "./platform.js";
-import { runPuppeteerChrome, runPuppeteerChromium, runPuppeteerFirefox } from "./puppeteerRunner.js";
+import {
+  runPuppeteerChrome,
+  runPuppeteerChromium,
+  runPuppeteerEdge,
+  runPuppeteerFirefox,
+} from "./puppeteerRunner.js";
 import {
   runPlaywrightChromium,
   runPlaywrightEdge,
@@ -136,17 +141,15 @@ export function buildTaskList() {
   // —— Edge (Ubuntu / Linux / Windows) ——
   if (profile.edge) {
     if (hasEdge) {
+      addBrowserTasks(tasks, dual, "Puppeteer", "Edge", runPuppeteerEdge);
       addBrowserTasks(tasks, dual, "Playwright", "Edge", runPlaywrightEdge);
       addBrowserTasks(tasks, dual, "TestCafe", "Edge", runTestcafeEdge);
       addBrowserTasks(tasks, dual, "Selenium", "Edge", runSeleniumEdge);
     } else {
       console.warn(
-        "[skip] TestCafe/Selenium + Edge: install Microsoft Edge or set EDGE_BIN (see install:browsers on Ubuntu)."
+        "[skip] Puppeteer/Playwright/TestCafe/Selenium + Edge: install Microsoft Edge or set EDGE_BIN (see install:browsers on Ubuntu)."
       );
     }
-    console.warn(
-      "[skip] Puppeteer + Edge: not supported (use Selenium or TestCafe for Edge)."
-    );
   }
 
   // —— WebKit (Playwright, macOS) ——

@@ -24,13 +24,30 @@ install_firefox() {
   apt-get install -y -qq firefox || apt-get install -y -qq firefox-esr
 }
 
+chromium_runs() {
+  local bin="$1"
+  [[ -x "$bin" ]] || return 1
+  if head -n 5 "$bin" 2>/dev/null | grep -qi 'requires the chromium snap'; then
+    return 1
+  fi
+  "$bin" --version >/dev/null 2>&1
+}
+
 install_chromium() {
-  if command -v chromium-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
-    echo "chromium: already installed"
+  if command -v chromium >/dev/null 2>&1 && chromium_runs "$(command -v chromium)"; then
+    echo "chromium: already installed ($(command -v chromium))"
     return 0
   fi
-  echo "chromium: installing …"
-  apt-get install -y -qq chromium-browser 2>/dev/null || apt-get install -y -qq chromium
+  if command -v chromium-browser >/dev/null 2>&1 && chromium_runs "$(command -v chromium-browser)"; then
+    echo "chromium: already installed ($(command -v chromium-browser))"
+    return 0
+  fi
+  echo "chromium: installing (apt chromium, not snap stub) …"
+  apt-get install -y -qq chromium 2>/dev/null || true
+  if command -v chromium >/dev/null 2>&1 && chromium_runs "$(command -v chromium)"; then
+    return 0
+  fi
+  echo "chromium: no native apt binary (Ubuntu may only offer snap). Use Playwright Chromium: npm run install:browsers" >&2
 }
 
 install_google_chrome() {
