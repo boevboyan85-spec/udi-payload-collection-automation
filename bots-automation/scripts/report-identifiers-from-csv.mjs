@@ -18,7 +18,6 @@ import {
   PROJECT_ROOT,
   resolveProjectPath,
 } from "../src/env.js";
-import { normalizeRequestHeaders } from "../src/httpHeadersNormalize.js";
 import {
   decompressUdiPayload,
   extractEncodedUdiFromCollectorPayload,
@@ -177,9 +176,7 @@ function rawHeadersObjectFromPayloadCell(payloadCell) {
   const parsed = parseJsonObject(payloadCell);
   const h = parsed.headers;
   if (h == null || typeof h !== "object" || Array.isArray(h)) return null;
-  return /** @type {Record<string, unknown>} */ (
-    normalizeRequestHeaders(/** @type {Record<string, unknown>} */ (h))
-  );
+  return /** @type {Record<string, unknown>} */ ({ ...h });
 }
 
 /**

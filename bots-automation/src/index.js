@@ -8,7 +8,6 @@ import { fileURLToPath } from "url";
 
 import { CSV_PATH, isDualCollectionEnabled, TARGET_URL } from "./config.js";
 import { appendPayloadRow } from "./csvStore.js";
-import { normalizeCollectorPayloadEnvelope } from "./httpHeadersNormalize.js";
 import { formatPlatformSummary, getPlatformProfile } from "./platform.js";
 import { buildTaskList } from "./tasks.js";
 
@@ -35,10 +34,7 @@ async function main() {
     try {
       console.log(`Running: ${name} ...`);
       const row = await run();
-      appendPayloadRow(csvAbsolute, {
-        ...row,
-        payload: normalizeCollectorPayloadEnvelope(row.payload),
-      });
+      appendPayloadRow(csvAbsolute, row);
       console.log(
         `  OK — headless=${row.headless}, document.hasFocus=${row.documentHasFocus}, visibility=${row.documentVisibility}, payload (${row.payload.length} chars)`
       );

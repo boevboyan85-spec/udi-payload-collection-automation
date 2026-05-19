@@ -10,7 +10,6 @@ import { fileURLToPath } from "url";
 
 import { COLLECTOR_HOST, COLLECTOR_PORT, COLLECTOR_ROOT, CSV_PATH } from "../src/env.js";
 import { appendPayloadRow } from "../src/csvStore.js";
-import { normalizeRequestHeaders } from "../src/httpHeadersNormalize.js";
 import { getDocumentFocusCsvColumnsFromEncodedUdi } from "../src/udiDecompress.js";
 
 const MIME = {
@@ -36,12 +35,12 @@ function getIndexTemplate() {
 
 function headerRecord(req) {
   /** @type {Record<string, string>} */
-  const raw = {};
+  const out = {};
   for (const [k, v] of Object.entries(req.headers)) {
     if (v === undefined) continue;
-    raw[k] = Array.isArray(v) ? v.join(", ") : v;
+    out[k] = Array.isArray(v) ? v.join(", ") : v;
   }
-  return normalizeRequestHeaders(raw);
+  return out;
 }
 
 function safeJoinUnderRoot(urlPath) {
