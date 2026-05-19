@@ -1,6 +1,9 @@
 import { chromium, firefox, webkit } from "playwright";
 
-import { resolveEdgeBinaryPath } from "./browserBinaries.js";
+import {
+  resolveChromeBinaryPath,
+  resolveEdgeBinaryPath,
+} from "./browserBinaries.js";
 import { chromiumNoSandboxArgs } from "./browserLaunchArgs.js";
 import {
   TARGET_URL,
@@ -62,6 +65,26 @@ function chromiumLaunchOptions() {
 
 export const runPlaywrightChromium = () =>
   runPlaywright(chromium, "chromium", chromiumLaunchOptions());
+
+export function runPlaywrightChrome() {
+  const chromeBin = resolveChromeBinaryPath();
+  const launchOptions = chromiumLaunchOptions();
+  if (process.platform === "linux" || process.platform === "win32") {
+    if (!chromeBin) {
+      return Promise.reject(
+        new Error(
+          "Google Chrome binary not found. On Ubuntu/Kasm install Chrome or set CHROME_BIN."
+        )
+      );
+    }
+    launchOptions.executablePath = chromeBin;
+  } else if (chromeBin) {
+    launchOptions.executablePath = chromeBin;
+  } else {
+    launchOptions.channel = "chrome";
+  }
+  return runPlaywright(chromium, "chrome", launchOptions);
+}
 
 export const runPlaywrightFirefox = () => runPlaywright(firefox, "firefox");
 

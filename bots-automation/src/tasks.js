@@ -19,6 +19,7 @@ import {
   runPuppeteerFirefox,
 } from "./puppeteerRunner.js";
 import {
+  runPlaywrightChrome,
   runPlaywrightChromium,
   runPlaywrightEdge,
   runPlaywrightFirefox,
@@ -106,11 +107,12 @@ export function buildTaskList() {
   // —— Chrome ——
   addBrowserTasks(tasks, dual, "Puppeteer", "Chrome", runPuppeteerChrome);
   if (hasChrome) {
+    addBrowserTasks(tasks, dual, "Playwright", "Chrome", runPlaywrightChrome);
     addBrowserTasks(tasks, dual, "TestCafe", "Chrome", runTestcafeChrome);
     addBrowserTasks(tasks, dual, "Selenium", "Chrome", runSeleniumChrome);
   } else {
     console.warn(
-      "[skip] TestCafe/Selenium + Chrome: install Google Chrome or set CHROME_BIN (Puppeteer uses its bundled Chrome if needed)."
+      "[skip] Playwright/TestCafe/Selenium + Chrome: install Google Chrome or set CHROME_BIN (Puppeteer uses its bundled Chrome if needed)."
     );
   }
 
