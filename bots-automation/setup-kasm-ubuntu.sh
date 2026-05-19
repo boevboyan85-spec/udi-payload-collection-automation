@@ -31,13 +31,29 @@ mkdir -p "$HOME/Documents/git"
 cd "$HOME/Documents/git"
 
 REPO_DIR="udi-payload-collection-automation"
+# Optional: copy bots-automation-develop.bundle from your Mac and set GIT_BUNDLE_PATH.
+GIT_BUNDLE_PATH="${GIT_BUNDLE_PATH:-}"
+
 if [[ -d "$REPO_DIR/.git" ]]; then
   echo "Repository exists at $PWD/$REPO_DIR — pulling develop..."
   AUTH_URL="https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/${REPO_SLUG}.git"
-  git -C "$REPO_DIR" pull "$AUTH_URL" develop || git -C "$REPO_DIR" pull "$AUTH_URL"
-else
+  if curl -sf -H "Authorization: token ${GITHUB_TOKEN}" https://api.github.com/user >/dev/null; then
+    git -C "$REPO_DIR" pull "$AUTH_URL" develop || git -C "$REPO_DIR" pull "$AUTH_URL"
+  else
+    echo "[warn] GitHub token invalid — skip pull. Use GIT_BUNDLE_PATH to clone, or: git pull after fixing token."
+  fi
+elif [[ -n "$GIT_BUNDLE_PATH" && -f "$GIT_BUNDLE_PATH" ]]; then
+  echo "Cloning from bundle: $GIT_BUNDLE_PATH"
+  git clone "$GIT_BUNDLE_PATH" -b develop "$REPO_DIR"
+elif curl -sf -H "Authorization: token ${GITHUB_TOKEN}" https://api.github.com/user >/dev/null; then
   git clone "https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/${REPO_SLUG}.git"
+  git -C "$REPO_DIR" checkout develop 2>/dev/null || true
   git -C "$REPO_DIR" remote set-url origin "https://github.com/${REPO_SLUG}.git"
+else
+  echo "No valid GitHub token and no GIT_BUNDLE_PATH. On your Mac run:" >&2
+  echo "  cd ~/Documents/GitHub/udi-payload-collection-automation && git bundle create ~/bots-automation-develop.bundle develop" >&2
+  echo "  scp ~/bots-automation-develop.bundle kasm:~/ && export GIT_BUNDLE_PATH=~/bots-automation-develop.bundle" >&2
+  exit 1
 fi
 
 cd "$REPO_DIR/$BOTS_DIR_NAME"

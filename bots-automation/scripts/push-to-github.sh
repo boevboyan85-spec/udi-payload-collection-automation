@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
-# Commit and push bots-automation (and repo root) changes to origin develop.
-# Works from bots-automation/ inside udi-payload-collection-automation monorepo.
+# Commit and push bots-automation changes to origin develop on GitHub.
+# Usage:
+#   GITHUB_TOKEN=ghp_xxx bash scripts/push-to-github.sh "commit message"
+#   bash scripts/push-to-github.sh ghp_xxx "commit message"
 set -euo pipefail
 
 BOTS="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_ROOT="$(cd "$BOTS/.." && pwd)"
+
+if [[ "${1:-}" == ghp_* ]]; then
+  GITHUB_TOKEN="$1"
+  shift
+fi
 
 # Test env defaults (same as setup-kasm-ubuntu.sh); git-push.env overrides when present.
 GITHUB_USERNAME="${GITHUB_USERNAME:-boyan.boev85-spec}"
@@ -47,4 +54,12 @@ git commit -m "$MSG"
 REPO_PATH="boevboyan85-spec/udi-payload-collection-automation"
 U="${GITHUB_USERNAME:-git}"
 export GIT_TERMINAL_PROMPT=0
+HTTP_CODE="$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token ${GITHUB_TOKEN}" https://api.github.com/user)"
+if [[ "$HTTP_CODE" != "200" ]]; then
+  echo "GitHub rejected GITHUB_TOKEN (HTTP ${HTTP_CODE}). Create a new PAT at https://github.com/settings/tokens (repo scope) and run:" >&2
+  echo "  GITHUB_TOKEN=ghp_your_token bash scripts/push-to-github.sh" >&2
+  exit 1
+fi
+
 git push "https://${U}:${GITHUB_TOKEN}@github.com/${REPO_PATH}.git" HEAD:develop
+echo "Pushed to https://github.com/${REPO_PATH}/tree/develop/bots-automation"
