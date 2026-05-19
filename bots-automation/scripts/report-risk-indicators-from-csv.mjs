@@ -22,6 +22,7 @@ import {
   RISK_SERVICE_URL,
   resolveProjectPath,
 } from "../src/env.js";
+import { normalizeRequestHeaders } from "../src/httpHeadersNormalize.js";
 import { extractEncodedUdiFromCollectorPayload } from "../src/udiDecompress.js";
 
 const RISK_URL = RISK_SERVICE_URL;
@@ -93,7 +94,9 @@ function mergeRiskHttpHeadersFromPayload(payloadCell) {
     parsed.headers != null &&
     typeof parsed.headers === "object" &&
     !Array.isArray(parsed.headers)
-      ? { ...parsed.headers }
+      ? normalizeRequestHeaders(
+          /** @type {Record<string, unknown>} */ (parsed.headers)
+        )
       : {};
   const ua = String(
     fromEnv["user-agent"] ??
@@ -104,7 +107,7 @@ function mergeRiskHttpHeadersFromPayload(payloadCell) {
   );
   return {
     ...fromPayload,
-    ...fromEnv,
+    ...normalizeRequestHeaders(fromEnv),
     "user-agent": ua,
   };
 }

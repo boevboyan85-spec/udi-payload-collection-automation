@@ -282,16 +282,11 @@
 
         function setTextareaEnvelope(headers, payload) {
           var envelope = { headers: headers, payload: payload };
-          document.getElementById("textareaPayload").value = JSON.stringify(
-            envelope,
-            null,
-            2
-          );
+          document.getElementById("textareaPayload").value = JSON.stringify(envelope);
         }
 
         window.collectPayload = function (payload) {
           getRequestHeadersRecord(false).then(function (headers) {
-            debugger;
             setTextareaEnvelope(headers, payload);
           });
         };

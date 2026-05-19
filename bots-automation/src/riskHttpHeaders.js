@@ -26,14 +26,11 @@ async function collectHeadersInBrowser() {
     return out;
   }
 
-  const esc = (s) =>
-    String(s ?? "")
-      .replace(/\\/g, "\\\\")
-      .replace(/"/g, '\\"');
-
   const brandList = (list) => {
     if (!list || !list.length) return "";
-    return list.map((b) => `"${esc(b.brand)}";v="${esc(b.version)}"`).join(", ");
+    return list
+      .map((b) => `"${String(b.brand ?? "")}";v="${String(b.version ?? "")}"`)
+      .join(", ");
   };
 
   if (ud.brands && ud.brands.length) {
