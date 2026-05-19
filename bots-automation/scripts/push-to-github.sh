@@ -15,7 +15,7 @@ fi
 
 # Test env defaults (same as setup-kasm-ubuntu.sh); git-push.env overrides when present.
 GITHUB_USERNAME="${GITHUB_USERNAME:-boyan.boev85-spec}"
-GITHUB_TOKEN="${GITHUB_TOKEN:-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}"
+GITHUB_TOKEN="${GITHUB_TOKEN:-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}"
 
 GIT_PUSH_ENV="${HOME}/.config/bots-automation/git-push.env"
 if [[ -f "$GIT_PUSH_ENV" ]]; then
