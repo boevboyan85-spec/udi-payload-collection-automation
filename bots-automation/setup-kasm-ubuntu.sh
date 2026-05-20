@@ -58,13 +58,97 @@ fi
 
 cd "$REPO_DIR/$BOTS_DIR_NAME"
 
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg apt-transport-https xz-utils
+# --- Node.js 20 + npm (Ubuntu apt "nodejs" on Kasm is often v12 and omits npm) ---
+node_toolchain_ok() {
+  command -v node >/dev/null 2>&1 &&
+    command -v npm >/dev/null 2>&1 &&
+    [[ "$(node -p 'parseInt(process.versions.node.split(".")[0],10)')" -ge 18 ]]
+}
 
-if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'process.versions.node.split(".")[0]')" -lt 18 ]]; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+disable_broken_apt_sources() {
+  # Kasm images often ship Sublime apt entries that fail behind corporate proxy (breaks apt update).
+  for f in /etc/apt/sources.list.d/*sublime* /etc/apt/sources.list.d/*Sublime*; do
+    [[ -f "$f" ]] || continue
+    if grep -qE '^[[:space:]]*deb ' "$f" 2>/dev/null; then
+      echo "[apt] Disabling broken source: $f"
+      sudo sed -i.bak -E 's/^([[:space:]]*deb )/# \1/' "$f"
+    fi
+  done
+}
+
+install_node_via_nodesource() {
+  echo "Node.js: trying NodeSource 20.x …"
+  if ! curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -; then
+    echo "[warn] NodeSource setup script failed."
+    return 1
+  fi
   sudo apt-get install -y nodejs
-fi
+  node_toolchain_ok
+}
+
+install_node_via_nvm() {
+  echo "Node.js: installing Node 20 via nvm (user-local) …"
+  export NVM_DIR="${HOME}/.nvm"
+  if [[ ! -s "${NVM_DIR}/nvm.sh" ]]; then
+    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+  fi
+  # shellcheck source=/dev/null
+  . "${NVM_DIR}/nvm.sh"
+  nvm install 20
+  nvm alias default 20
+  node_toolchain_ok
+}
+
+ensure_node_toolchain() {
+  disable_broken_apt_sources
+  sudo apt-get update -qq || sudo apt-get update
+  sudo apt-get install -y ca-certificates curl gnupg apt-transport-https xz-utils
+
+  if node_toolchain_ok; then
+    echo "Node $(node -v), npm $(npm -v) — OK"
+    return 0
+  fi
+
+  # Remove Ubuntu universe nodejs 12 (no npm / too old) before NodeSource.
+  if command -v node >/dev/null 2>&1; then
+    echo "Removing old node: $(node -v 2>/dev/null || echo missing)"
+    sudo apt-get remove -y nodejs npm 2>/dev/null || true
+    sudo apt-get autoremove -y 2>/dev/null || true
+  fi
+
+  install_node_via_nodesource || true
+  if node_toolchain_ok; then
+    echo "Node $(node -v), npm $(npm -v) — OK (NodeSource)"
+    return 0
+  fi
+
+  install_node_via_nvm || true
+  if node_toolchain_ok; then
+    echo "Node $(node -v), npm $(npm -v) — OK (nvm)"
+    NVM_MARK="bots-automation nvm"
+    touch "$HOME/.bashrc"
+    if ! grep -qF "$NVM_MARK" "$HOME/.bashrc" 2>/dev/null; then
+      {
+        echo ""
+        echo "# ${NVM_MARK}"
+        echo 'export NVM_DIR="$HOME/.nvm"'
+        echo '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"'
+      } >>"$HOME/.bashrc"
+    fi
+    return 0
+  fi
+
+  echo "ERROR: Could not install Node 18+ with npm. Try manually:" >&2
+  echo "  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs" >&2
+  echo "  # or: install nvm and run: nvm install 20" >&2
+  exit 1
+}
+
+ensure_node_toolchain
+
+# Corporate TLS / skip Puppeteer Chrome download on Kasm
+export NODE_TLS_REJECT_UNAUTHORIZED="${NODE_TLS_REJECT_UNAUTHORIZED:-0}"
+export PUPPETEER_SKIP_DOWNLOAD="${PUPPETEER_SKIP_DOWNLOAD:-1}"
 
 npm install
 npm run install:browsers

@@ -12,11 +12,13 @@ GITHUB_TOKEN=ghp_YOUR_NEW_TOKEN bash bots-automation/scripts/push-to-github.sh
 On Kasm:
 
 ```bash
-bash setup-kasm-ubuntu.sh
 cd ~/Documents/git/udi-payload-collection-automation/bots-automation
+bash setup-kasm-ubuntu.sh
 cp .env.example .env
 ./run-kasm.sh
 ```
+
+**`npm: command not found` after setup?** Kasm’s default `apt install nodejs` is often **Node 12 without npm**. Re-run `bash setup-kasm-ubuntu.sh` (disables broken Sublime apt sources, installs **Node 20 + npm** via NodeSource, or **nvm** as fallback). Verify: `node -v` (v18+) and `npm -v`.
 
 ## Option B — Git bundle (no GitHub push needed)
 
