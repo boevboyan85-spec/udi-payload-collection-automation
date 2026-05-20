@@ -146,11 +146,20 @@ ensure_node_toolchain() {
 
 ensure_node_toolchain
 
-# Corporate TLS / skip Puppeteer Chrome download on Kasm
+# Corporate TLS (MITM proxy → SELF_SIGNED_CERT_IN_CHAIN) / skip Puppeteer Chrome download
 export NODE_TLS_REJECT_UNAUTHORIZED="${NODE_TLS_REJECT_UNAUTHORIZED:-0}"
+export NPM_CONFIG_STRICT_SSL="${NPM_CONFIG_STRICT_SSL:-false}"
 export PUPPETEER_SKIP_DOWNLOAD="${PUPPETEER_SKIP_DOWNLOAD:-1}"
+npm config set strict-ssl false
+# Optional: corporate root CA — export NPM_CONFIG_CAFILE=/path/to/corp-ca.pem
 
-npm install
+echo ""
+echo "=== npm install (10–30 min on Kasm behind proxy is normal; spinner ⠙ = working) ==="
+echo "    NODE_TLS_REJECT_UNAUTHORIZED=0 and npm strict-ssl=false are expected in test env."
+npm run install:deps -- --no-audit --no-fund --loglevel=info
+
+echo ""
+echo "=== System browsers (apt) + Playwright chromium/firefox (large downloads) ==="
 npm run install:browsers
 
 GIT_ENV_DIR="${HOME}/.config/bots-automation"
