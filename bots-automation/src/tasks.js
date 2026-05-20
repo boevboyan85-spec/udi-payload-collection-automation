@@ -1,5 +1,5 @@
 /**
- * Platform-aware automation matrix (macOS vs Ubuntu/Kasm).
+ * Platform-aware automation matrix (macOS, Ubuntu/Kasm, Windows).
  */
 import {
   isDualCollectionEnabled,
@@ -116,16 +116,18 @@ export function buildTaskList() {
     );
   }
 
-  // —— Chromium (Playwright bundle + optional system binary) ——
-  addBrowserTasks(tasks, dual, "Playwright", "Chromium", runPlaywrightChromium);
-  if (hasChromium) {
-    addBrowserTasks(tasks, dual, "Puppeteer", "Chromium", runPuppeteerChromium);
-    addBrowserTasks(tasks, dual, "TestCafe", "Chromium", runTestcafeChromium);
-    addBrowserTasks(tasks, dual, "Selenium", "Chromium", runSeleniumChromium);
-  } else if (profile.platform === "ubuntu" || profile.platform === "linux") {
-    console.warn(
-      "[skip] Puppeteer/TestCafe/Selenium + Chromium: run `npm run install:browsers` or set CHROMIUM_BIN."
-    );
+  // —— Chromium (macOS / Linux only; not in Windows Chrome+Edge+Firefox matrix) ——
+  if (profile.chromium) {
+    addBrowserTasks(tasks, dual, "Playwright", "Chromium", runPlaywrightChromium);
+    if (hasChromium) {
+      addBrowserTasks(tasks, dual, "Puppeteer", "Chromium", runPuppeteerChromium);
+      addBrowserTasks(tasks, dual, "TestCafe", "Chromium", runTestcafeChromium);
+      addBrowserTasks(tasks, dual, "Selenium", "Chromium", runSeleniumChromium);
+    } else if (profile.platform === "ubuntu" || profile.platform === "linux") {
+      console.warn(
+        "[skip] Puppeteer/TestCafe/Selenium + Chromium: run `npm run install:browsers` or set CHROMIUM_BIN."
+      );
+    }
   }
 
   // —— Firefox ——
@@ -149,7 +151,7 @@ export function buildTaskList() {
       addBrowserTasks(tasks, dual, "Selenium", "Edge", runSeleniumEdge);
     } else {
       console.warn(
-        "[skip] Puppeteer/Playwright/TestCafe/Selenium + Edge: install Microsoft Edge or set EDGE_BIN (see install:browsers on Ubuntu)."
+        "[skip] Puppeteer/Playwright/TestCafe/Selenium + Edge: install Edge or set EDGE_BIN (see install:browsers)."
       );
     }
   }

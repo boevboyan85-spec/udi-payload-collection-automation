@@ -39,10 +39,24 @@ export function resolveChromeBinaryPath() {
 
   if (process.platform === "win32") {
     const pf = process.env.PROGRAMFILES || "C:\\Program Files";
-    return firstExisting([
+    const pf86 = process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)";
+    const fromPaths = firstExisting([
       `${pf}\\Google\\Chrome\\Application\\chrome.exe`,
-      `${process.env["PROGRAMFILES(X86)"] || ""}\\Google\\Chrome\\Application\\chrome.exe`,
+      `${pf86}\\Google\\Chrome\\Application\\chrome.exe`,
+      `${process.env.LOCALAPPDATA || ""}\\Google\\Chrome\\Application\\chrome.exe`,
     ]);
+    if (fromPaths) return fromPaths;
+    try {
+      const out = execSync("where chrome", {
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "ignore"],
+      }).trim();
+      const line = out.split(/\r?\n/)[0];
+      if (line && fs.existsSync(line)) return line;
+    } catch {
+      // not on PATH
+    }
+    return "";
   }
 
   return firstExisting([
@@ -127,9 +141,23 @@ export function resolveFirefoxBinaryPath() {
 
   if (process.platform === "win32") {
     const pf = process.env.PROGRAMFILES || "C:\\Program Files";
-    return firstExisting([
+    const pf86 = process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)";
+    const fromPaths = firstExisting([
       `${pf}\\Mozilla Firefox\\firefox.exe`,
+      `${pf86}\\Mozilla Firefox\\firefox.exe`,
     ]);
+    if (fromPaths) return fromPaths;
+    try {
+      const out = execSync("where firefox", {
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "ignore"],
+      }).trim();
+      const line = out.split(/\r?\n/)[0];
+      if (line && fs.existsSync(line)) return line;
+    } catch {
+      // not on PATH
+    }
+    return "";
   }
 
   const fromPath = firstExisting([
@@ -178,10 +206,23 @@ export function resolveEdgeBinaryPath() {
 
   if (process.platform === "win32") {
     const pf = process.env.PROGRAMFILES || "C:\\Program Files";
-    return firstExisting([
+    const pf86 = process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)";
+    const fromPaths = firstExisting([
       `${pf}\\Microsoft\\Edge\\Application\\msedge.exe`,
-      `${process.env["PROGRAMFILES(X86)"] || ""}\\Microsoft\\Edge\\Application\\msedge.exe`,
+      `${pf86}\\Microsoft\\Edge\\Application\\msedge.exe`,
     ]);
+    if (fromPaths) return fromPaths;
+    try {
+      const out = execSync("where msedge", {
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "ignore"],
+      }).trim();
+      const line = out.split(/\r?\n/)[0];
+      if (line && fs.existsSync(line)) return line;
+    } catch {
+      // not on PATH
+    }
+    return "";
   }
 
   const fromPath = firstExisting([

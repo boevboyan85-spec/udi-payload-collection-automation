@@ -16,19 +16,20 @@ All defaults match prior behaviour if `.env` is missing empty keys—variables a
 - **Browsers:** `npm run install:browsers` (platform-aware; see below)
 - **macOS:** Safari stacks need `sudo safaridriver --enable` once
 - **Ubuntu / Kasm:** Chrome, Chromium, Firefox, and optionally Edge via apt; Playwright bundles Chromium/Firefox
+- **Windows:** Chrome, Edge, Firefox — all four tools, headless + headed (no Chromium / WebKit / Safari rows)
 
-## Platform (macOS vs Ubuntu / Kasm)
+## Platform (macOS vs Ubuntu / Kasm vs Windows)
 
 Set in **`.env`** or the environment:
 
 | Variable | Values | Purpose |
 |----------|--------|---------|
-| `BOTS_PLATFORM` | `auto` (default), `macos`, `ubuntu`, `kasm`, `linux` | Which browser matrix to run |
+| `BOTS_PLATFORM` | `auto` (default), `macos`, `ubuntu`, `kasm`, `linux`, `win32`, `windows` | Which browser matrix to run |
 | `BOTS_IN_CONTAINER` | `1` | Treat as Docker/Kasm (implies `--no-sandbox` for Chromium) |
 | `BOTS_NO_SANDBOX` | `1` / `0` | Force or disable Chromium sandbox flags |
 | `BOTS_SKIP_OS_BROWSER_INSTALL` | `1` | Skip apt browser install during `install:browsers` |
 
-**Auto detection:** `darwin` → macOS (Chrome, Firefox, WebKit, Safari). Linux with Ubuntu/Kasm in `/etc/os-release` → Ubuntu profile (Chrome, Chromium, Firefox, Edge — no Safari/WebKit).
+**Auto detection:** `darwin` → macOS (Chrome, Chromium, Firefox, WebKit, Safari, Edge). Linux with Ubuntu/Kasm in `/etc/os-release` → Ubuntu profile (Chrome, Chromium, Firefox, Edge). `win32` → Windows profile (Chrome, Edge, Firefox only).
 
 **Kasm example (`.env`):**
 
@@ -39,6 +40,25 @@ BOTS_HEADLESS=true
 BOTS_COLLECT_DUAL=false
 ```
 
+**Windows example (`.env`):**
+
+```env
+BOTS_PLATFORM=win32
+BOTS_COLLECT_DUAL=true
+PUPPETEER_SKIP_DOWNLOAD=1
+PUPPETEER_EXECUTABLE_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
+```
+
+Then:
+
+```powershell
+npm install
+npm run install:browsers
+.\run-windows.ps1
+```
+
+Or set `BOTS_PLATFORM=auto` on Windows (detects `win32` automatically).
+
 ## Install
 
 ```bash
@@ -47,7 +67,7 @@ npm install
 npm run install:browsers
 ```
 
-On **Ubuntu/Kasm**, `install:browsers` runs `scripts/install-os-browsers-ubuntu.sh` (apt: Firefox, Chromium, Google Chrome, Microsoft Edge when available) and `playwright install chromium firefox` plus Linux deps. On **macOS**, it installs Playwright **chromium, firefox, webkit** only (use system Chrome/Safari for other tools).
+On **Ubuntu/Kasm**, `install:browsers` runs `scripts/install-os-browsers-ubuntu.sh` (apt) and `playwright install chromium firefox` plus Linux deps. On **macOS**, Playwright **chromium, firefox, webkit**. On **Windows**, `install-os-browsers-windows.ps1` (winget: Chrome, Edge, Firefox) plus Playwright **chromium, firefox** (used for Firefox automation; Chrome/Edge use system binaries or Playwright channels).
 
 **Kasm one-shot setup** (clone monorepo, apt browsers, npm, git credentials for test env):
 

@@ -39,6 +39,7 @@ export function resolveBotsPlatform() {
  */
 export function getPlatformProfile(platform = resolveBotsPlatform()) {
   const isMac = platform === "macos";
+  const isWin = platform === "win32";
   const isUbuntuLike = platform === "ubuntu" || platform === "linux";
 
   return {
@@ -50,25 +51,38 @@ export function getPlatformProfile(platform = resolveBotsPlatform()) {
           ? "Ubuntu / Kasm"
           : platform === "linux"
             ? "Linux"
-            : platform,
+            : isWin
+              ? "Windows"
+              : platform,
 
     /** Google Chrome / `chrome` alias (system or Puppeteer default). */
     chrome: true,
-    /** Distinct Chromium binary (Playwright bundle + optional system `/usr/bin/chromium`). */
-    chromium: true,
+    /** Distinct Chromium binary (Playwright bundle + optional system binary). Off on Windows matrix. */
+    chromium: !isWin,
     firefox: true,
     /** Playwright WebKit bundle + macOS native Safari stacks. */
     webkit: isMac,
     /** TestCafe / Selenium Safari (macOS only). */
     safari: isMac,
-    /** Microsoft Edge — Ubuntu .deb, Windows, or macOS if installed. */
-    edge: isUbuntuLike || platform === "win32" || platform === "macos",
+    /** Microsoft Edge — Ubuntu, Windows, or macOS if installed. */
+    edge: isUbuntuLike || isWin || isMac,
+
+    /**
+     * Windows: Puppeteer, Playwright, Selenium, TestCafe × Chrome, Edge, Firefox × headless/headed.
+     * (No Chromium / WebKit / Safari rows.)
+     */
+    chromeEdgeFirefoxMatrix: isWin,
 
     /** Playwright browsers to download in `npm run install:browsers`. */
-    playwrightBrowsers: isMac ? ["chromium", "firefox", "webkit"] : ["chromium", "firefox"],
+    playwrightBrowsers: isMac
+      ? ["chromium", "firefox", "webkit"]
+      : ["chromium", "firefox"],
 
     /** Run `scripts/install-os-browsers-ubuntu.sh` when installing browsers. */
     installOsBrowsersScript: platform === "ubuntu",
+
+    /** Run `scripts/install-os-browsers-windows.ps1` (winget) when installing browsers. */
+    installWindowsBrowsersScript: isWin,
 
     /** Recommend container flags (--no-sandbox) for Chromium-based launches. */
     preferNoSandbox: isUbuntuLike || isContainer(),
@@ -93,8 +107,11 @@ export function isContainer() {
 
 /** @returns {string} one-line summary for logs */
 export function formatPlatformSummary(profile = getPlatformProfile()) {
-  const browsers = ["Chrome", "Chromium", "Firefox"];
-  if (profile.edge) browsers.push("Edge");
+  /** @type {string[]} */
+  const browsers = profile.chromeEdgeFirefoxMatrix
+    ? ["Chrome", "Edge", "Firefox"]
+    : ["Chrome", "Chromium", "Firefox"];
+  if (profile.edge && !profile.chromeEdgeFirefoxMatrix) browsers.push("Edge");
   if (profile.webkit) browsers.push("WebKit (Playwright)");
   if (profile.safari) browsers.push("Safari");
   return `${profile.label} [${profile.platform}] — browsers: ${browsers.join(", ")}`;

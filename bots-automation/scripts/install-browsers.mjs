@@ -45,6 +45,24 @@ if (profile.installOsBrowsersScript && !skipOs) {
   console.log("Skipping system browser install (BOTS_SKIP_OS_BROWSER_INSTALL=1).\n");
 }
 
+if (profile.installWindowsBrowsersScript && !skipOs) {
+  const script = path.join(__dirname, "install-os-browsers-windows.ps1");
+  console.log("Installing system browsers (Windows / winget) …\n");
+  const ps = spawnSync(
+    "powershell",
+    ["-ExecutionPolicy", "Bypass", "-File", script],
+    { stdio: "inherit", cwd: projectRoot }
+  );
+  if (ps.status !== 0) {
+    console.warn(
+      "\n[warn] Windows browser install had errors (continuing with Playwright). " +
+        "Install Chrome/Edge/Firefox manually or set BOTS_SKIP_OS_BROWSER_INSTALL=1.\n"
+    );
+  }
+} else if (profile.installWindowsBrowsersScript && skipOs) {
+  console.log("Skipping Windows browser install (BOTS_SKIP_OS_BROWSER_INSTALL=1).\n");
+}
+
 const playwrightArgs = ["playwright", "install", ...profile.playwrightBrowsers];
 console.log(`Playwright: npx ${playwrightArgs.join(" ")}\n`);
 

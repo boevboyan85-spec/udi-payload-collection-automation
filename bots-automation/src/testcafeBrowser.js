@@ -1,4 +1,5 @@
 import {
+  resolveChromeBinaryPath,
   resolveChromiumBinaryPath,
   resolveEdgeBinaryPath,
 } from "./browserBinaries.js";
@@ -29,6 +30,12 @@ function formatChromiumAliasWithPath(alias, binaryPath, headless) {
  * @returns {string}
  */
 export function formatTestcafeBrowserString(browserArg, headless) {
+  if (browserArg === "chrome" && process.platform === "win32") {
+    const chromeBin = resolveChromeBinaryPath();
+    if (chromeBin) {
+      return formatChromiumAliasWithPath("chrome", chromeBin, headless);
+    }
+  }
   if (browserArg === "edge") {
     const edgeBin = resolveEdgeBinaryPath();
     if (!edgeBin) {
