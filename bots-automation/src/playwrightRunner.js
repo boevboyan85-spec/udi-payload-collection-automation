@@ -1,6 +1,7 @@
 import { chromium, firefox, webkit } from "playwright";
 
 import {
+  resolveBraveBinaryPath,
   resolveChromeBinaryPath,
   resolveEdgeBinaryPath,
 } from "./browserBinaries.js";
@@ -110,6 +111,20 @@ export function runPlaywrightEdge() {
     );
   }
   return runPlaywright(chromium, "edge", launchOptions);
+}
+
+export function runPlaywrightBrave() {
+  const braveBin = resolveBraveBinaryPath();
+  const launchOptions = chromiumLaunchOptions();
+  if (!braveBin) {
+    return Promise.reject(
+      new Error(
+        "Brave binary not found. Install Brave or set BRAVE_BIN (see install:browsers)."
+      )
+    );
+  }
+  launchOptions.executablePath = braveBin;
+  return runPlaywright(chromium, "brave", launchOptions);
 }
 
 export const runPlaywrightWebkit = () => runPlaywright(webkit, "webkit");

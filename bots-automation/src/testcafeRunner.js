@@ -113,4 +113,5 @@ export const runTestcafeChrome = () => runTestcafe("chrome");
 export const runTestcafeChromium = () => runTestcafe("chromium");
 export const runTestcafeFirefox = () => runTestcafe("firefox");
 export const runTestcafeEdge = () => runTestcafe("edge");
+export const runTestcafeBrave = () => runTestcafe("brave");
 export const runTestcafeSafari = () => runTestcafe("safari");

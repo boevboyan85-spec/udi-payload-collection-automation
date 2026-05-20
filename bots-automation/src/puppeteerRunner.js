@@ -1,6 +1,7 @@
 import puppeteer from "puppeteer";
 
 import {
+  resolveBraveBinaryPath,
   resolveChromeBinaryPath,
   resolveChromiumBinaryPath,
   resolveEdgeBinaryPath,
@@ -180,4 +181,17 @@ export function runPuppeteerEdge() {
     );
   }
   return runPuppeteer("chrome", "edge", edgeBin);
+}
+
+/** Brave is Chromium-based; Puppeteer launches it via the Chrome protocol. */
+export function runPuppeteerBrave() {
+  const braveBin = resolveBraveBinaryPath();
+  if (!braveBin) {
+    return Promise.reject(
+      new Error(
+        "Brave binary not found. Install Brave or set BRAVE_BIN (see install:browsers)."
+      )
+    );
+  }
+  return runPuppeteer("chrome", "brave", braveBin);
 }

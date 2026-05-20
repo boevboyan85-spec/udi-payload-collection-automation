@@ -67,8 +67,11 @@ export function getPlatformProfile(platform = resolveBotsPlatform()) {
     /** Microsoft Edge — Ubuntu, Windows, or macOS if installed. */
     edge: isUbuntuLike || isWin || isMac,
 
+    /** Brave Browser — Ubuntu / Kasm and Windows only. */
+    brave: isUbuntuLike || isWin,
+
     /**
-     * Windows: Puppeteer, Playwright, Selenium, TestCafe × Chrome, Edge, Firefox × headless/headed.
+     * Windows: Puppeteer, Playwright, Selenium, TestCafe × Chrome, Edge, Firefox, Brave × headless/headed.
      * (No Chromium / WebKit / Safari rows.)
      */
     chromeEdgeFirefoxMatrix: isWin,
@@ -109,9 +112,10 @@ export function isContainer() {
 export function formatPlatformSummary(profile = getPlatformProfile()) {
   /** @type {string[]} */
   const browsers = profile.chromeEdgeFirefoxMatrix
-    ? ["Chrome", "Edge", "Firefox"]
+    ? ["Chrome", "Edge", "Firefox", "Brave"]
     : ["Chrome", "Chromium", "Firefox"];
   if (profile.edge && !profile.chromeEdgeFirefoxMatrix) browsers.push("Edge");
+  if (profile.brave && !profile.chromeEdgeFirefoxMatrix) browsers.push("Brave");
   if (profile.webkit) browsers.push("WebKit (Playwright)");
   if (profile.safari) browsers.push("Safari");
   return `${profile.label} [${profile.platform}] — browsers: ${browsers.join(", ")}`;

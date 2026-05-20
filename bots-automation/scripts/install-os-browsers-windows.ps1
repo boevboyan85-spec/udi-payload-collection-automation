@@ -1,4 +1,4 @@
-# Install Chrome, Edge, and Firefox on Windows via winget (optional; idempotent).
+# Install Chrome, Edge, Firefox, and Brave on Windows via winget (optional; idempotent).
 # Requires winget. Run: powershell -ExecutionPolicy Bypass -File scripts/install-os-browsers-windows.ps1
 $ErrorActionPreference = "Continue"
 
@@ -14,14 +14,15 @@ function Install-WingetApp {
 }
 
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-    Write-Warning "winget not found. Install Chrome, Edge, and Firefox manually, or set CHROME_BIN / EDGE_BIN / FIREFOX_BIN in .env"
+    Write-Warning "winget not found. Install Chrome, Edge, Firefox, and Brave manually, or set CHROME_BIN / EDGE_BIN / FIREFOX_BIN / BRAVE_BIN in .env"
     exit 0
 }
 
 Install-WingetApp "Google.Chrome" "Google Chrome"
 Install-WingetApp "Microsoft.Edge" "Microsoft Edge"
 Install-WingetApp "Mozilla.Firefox" "Mozilla Firefox"
+Install-WingetApp "BraveSoftware.BraveBrowser" "Brave"
 
 Write-Host ""
 Write-Host "Verify:"
-Get-Command chrome, msedge, firefox -ErrorAction SilentlyContinue | Format-Table Name, Source
+Get-Command chrome, msedge, firefox, brave -ErrorAction SilentlyContinue | Format-Table Name, Source

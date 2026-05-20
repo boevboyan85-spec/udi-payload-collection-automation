@@ -6,6 +6,7 @@ import {
   runWithGlobalHeadless,
 } from "./config.js";
 import {
+  isBraveAvailable,
   isChromeAvailable,
   isChromiumAvailable,
   isEdgeAvailable,
@@ -13,12 +14,14 @@ import {
 } from "./browserBinaries.js";
 import { getPlatformProfile } from "./platform.js";
 import {
+  runPuppeteerBrave,
   runPuppeteerChrome,
   runPuppeteerChromium,
   runPuppeteerEdge,
   runPuppeteerFirefox,
 } from "./puppeteerRunner.js";
 import {
+  runPlaywrightBrave,
   runPlaywrightChrome,
   runPlaywrightChromium,
   runPlaywrightEdge,
@@ -26,6 +29,7 @@ import {
   runPlaywrightWebkit,
 } from "./playwrightRunner.js";
 import {
+  runSeleniumBrave,
   runSeleniumChrome,
   runSeleniumChromium,
   runSeleniumEdge,
@@ -33,6 +37,7 @@ import {
   runSeleniumSafari,
 } from "./seleniumRunner.js";
 import {
+  runTestcafeBrave,
   runTestcafeChrome,
   runTestcafeChromium,
   runTestcafeEdge,
@@ -103,6 +108,7 @@ export function buildTaskList() {
   const hasChromium = isChromiumAvailable();
   const hasFirefox = isFirefoxAvailable();
   const hasEdge = isEdgeAvailable();
+  const hasBrave = isBraveAvailable();
 
   // —— Chrome ——
   addBrowserTasks(tasks, dual, "Puppeteer", "Chrome", runPuppeteerChrome);
@@ -142,7 +148,7 @@ export function buildTaskList() {
     );
   }
 
-  // —— Edge (Ubuntu / Linux / Windows) ——
+  // —— Edge (Ubuntu / Linux / Windows / macOS) ——
   if (profile.edge) {
     if (hasEdge) {
       addBrowserTasks(tasks, dual, "Puppeteer", "Edge", runPuppeteerEdge);
@@ -152,6 +158,20 @@ export function buildTaskList() {
     } else {
       console.warn(
         "[skip] Puppeteer/Playwright/TestCafe/Selenium + Edge: install Edge or set EDGE_BIN (see install:browsers)."
+      );
+    }
+  }
+
+  // —— Brave (Ubuntu / Kasm / Windows) ——
+  if (profile.brave) {
+    if (hasBrave) {
+      addBrowserTasks(tasks, dual, "Puppeteer", "Brave", runPuppeteerBrave);
+      addBrowserTasks(tasks, dual, "Playwright", "Brave", runPlaywrightBrave);
+      addBrowserTasks(tasks, dual, "TestCafe", "Brave", runTestcafeBrave);
+      addBrowserTasks(tasks, dual, "Selenium", "Brave", runSeleniumBrave);
+    } else {
+      console.warn(
+        "[skip] Puppeteer/Playwright/TestCafe/Selenium + Brave: install Brave or set BRAVE_BIN (see install:browsers)."
       );
     }
   }

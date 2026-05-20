@@ -78,6 +78,7 @@ function readJsonBody(req, limitBytes = 2_000_000) {
 function inferBrowserLabelFromUserAgent(uaRaw) {
   const ua = String(uaRaw ?? "");
   if (/Edg\//.test(ua)) return "edge";
+  if (/Brave\//.test(ua) || /brave/i.test(ua)) return "brave";
   if (/Chrome\//.test(ua) && !/Edg\//.test(ua)) return "chrome";
   if (/Firefox\//.test(ua)) return "firefox";
   // Safari UA also contains "Safari/" in Chrome; ensure not Chrome

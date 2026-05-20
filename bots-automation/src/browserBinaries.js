@@ -253,6 +253,72 @@ export function resolveEdgeBinaryPath() {
   return "";
 }
 
+/**
+ * Brave Browser (Chromium-based).
+ * @returns {string}
+ */
+export function resolveBraveBinaryPath() {
+  const fromEnv =
+    process.env.BRAVE_BIN ||
+    process.env.SELENIUM_BRAVE_BINARY ||
+    process.env.BRAVE_BROWSER_BIN;
+  if (fromEnv && String(fromEnv).trim()) {
+    const p = String(fromEnv).trim();
+    if (fs.existsSync(p)) return p;
+  }
+
+  if (process.platform === "darwin") {
+    return firstExisting([
+      "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+    ]);
+  }
+
+  if (process.platform === "win32") {
+    const pf = process.env.PROGRAMFILES || "C:\\Program Files";
+    const pf86 = process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)";
+    const local = process.env.LOCALAPPDATA || "";
+    const fromPaths = firstExisting([
+      `${pf}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+      `${pf86}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+      `${local}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+    ]);
+    if (fromPaths) return fromPaths;
+    try {
+      const out = execSync("where brave", {
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "ignore"],
+      }).trim();
+      const line = out.split(/\r?\n/)[0];
+      if (line && fs.existsSync(line)) return line;
+    } catch {
+      // not on PATH
+    }
+    return "";
+  }
+
+  const fromPath = firstExisting([
+    "/usr/bin/brave-browser",
+    "/usr/bin/brave-browser-stable",
+    "/snap/bin/brave",
+  ]);
+  if (fromPath) return fromPath;
+
+  for (const cmd of ["brave-browser", "brave-browser-stable", "brave"]) {
+    try {
+      const out = execSync(`command -v ${cmd}`, {
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "ignore"],
+      }).trim();
+      const line = out.split(/\r?\n/)[0];
+      if (line && fs.existsSync(line)) return line;
+    } catch {
+      // not on PATH
+    }
+  }
+
+  return "";
+}
+
 /** @returns {boolean} */
 export function isChromeAvailable() {
   return resolveChromeBinaryPath() !== "";
@@ -271,6 +337,11 @@ export function isFirefoxAvailable() {
 /** @returns {boolean} */
 export function isEdgeAvailable() {
   return resolveEdgeBinaryPath() !== "";
+}
+
+/** @returns {boolean} */
+export function isBraveAvailable() {
+  return resolveBraveBinaryPath() !== "";
 }
 
 /** @deprecated use isFirefoxAvailable */

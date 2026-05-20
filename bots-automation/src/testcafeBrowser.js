@@ -1,4 +1,5 @@
 import {
+  resolveBraveBinaryPath,
   resolveChromeBinaryPath,
   resolveChromiumBinaryPath,
   resolveEdgeBinaryPath,
@@ -51,6 +52,13 @@ export function formatTestcafeBrowserString(browserArg, headless) {
       );
     }
     return formatChromiumAliasWithPath("chromium", chromiumBin, headless);
+  }
+  if (browserArg === "brave") {
+    const braveBin = resolveBraveBinaryPath();
+    if (!braveBin) {
+      throw new Error("Brave binary not found (set BRAVE_BIN).");
+    }
+    return formatChromiumAliasWithPath("chrome", braveBin, headless);
   }
   return headless ? `${browserArg}:headless` : browserArg;
 }

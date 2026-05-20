@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Chrome, Chromium, Firefox, and Microsoft Edge on Ubuntu/Debian (Kasm-friendly).
+# Install Chrome, Chromium, Firefox, Brave, and Microsoft Edge on Ubuntu/Debian (Kasm-friendly).
 # Requires apt and (usually) root. Idempotent — skips what is already installed.
 set -euo pipefail
 
@@ -79,6 +79,39 @@ install_google_chrome() {
   rm -rf "$tmp"
 }
 
+install_brave() {
+  if command -v brave-browser >/dev/null 2>&1; then
+    echo "brave-browser: already installed ($(command -v brave-browser))"
+    return 0
+  fi
+  if command -v brave-browser-stable >/dev/null 2>&1; then
+    echo "brave-browser: already installed ($(command -v brave-browser-stable))"
+    return 0
+  fi
+  echo "brave-browser: installing …"
+  if ! command -v curl >/dev/null 2>&1; then
+    apt-get install -y -qq curl
+  fi
+  curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
+    https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg 2>/dev/null || {
+    echo "brave-browser: key download failed (optional — skip)" >&2
+    return 0
+  }
+  if [[ "$(dpkg --print-architecture)" == "arm64" ]]; then
+    echo "deb [arch=arm64 signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+      > /etc/apt/sources.list.d/brave-browser-release.list
+  else
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+      > /etc/apt/sources.list.d/brave-browser-release.list
+  fi
+  apt-get update -qq
+  apt-get install -y -qq brave-browser 2>/dev/null || {
+    echo "brave-browser: install failed (optional — skip)" >&2
+    rm -f /etc/apt/sources.list.d/brave-browser-release.list
+    return 0
+  }
+}
+
 install_microsoft_edge() {
   if command -v microsoft-edge-stable >/dev/null 2>&1; then
     echo "microsoft-edge: already installed"
@@ -107,6 +140,7 @@ install_microsoft_edge() {
 install_firefox
 install_chromium
 install_google_chrome
+install_brave
 install_microsoft_edge
 
 link_microsoft_edge_alias() {
@@ -127,3 +161,4 @@ command -v google-chrome-stable 2>/dev/null && google-chrome-stable --version ||
 command -v chromium-browser 2>/dev/null && chromium-browser --version || command -v chromium 2>/dev/null && chromium --version || true
 command -v firefox 2>/dev/null && firefox --version || true
 command -v microsoft-edge-stable 2>/dev/null && microsoft-edge-stable --version || true
+command -v brave-browser 2>/dev/null && brave-browser --version || command -v brave-browser-stable 2>/dev/null && brave-browser-stable --version || true

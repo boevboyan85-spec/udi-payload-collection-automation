@@ -5,6 +5,7 @@ import firefox from "selenium-webdriver/firefox.js";
 import safari from "selenium-webdriver/safari.js";
 
 import {
+  resolveBraveBinaryPath,
   resolveChromeBinaryPath,
   resolveChromiumBinaryPath,
   resolveFirefoxBinaryPath,
@@ -137,6 +138,23 @@ export function runSeleniumEdge() {
       return new Builder().forBrowser("MicrosoftEdge").setEdgeOptions(opts).build();
     },
     "edge",
+    headless
+  );
+}
+
+export function runSeleniumBrave() {
+  const headless = resolveHeadless("SELENIUM_HEADLESS");
+  const braveBin = resolveBraveBinaryPath();
+  if (!braveBin) {
+    return Promise.reject(new Error("Brave binary not found (set BRAVE_BIN)."));
+  }
+  return runWithDriver(
+    () => {
+      const opts = buildChromiumOptions(headless);
+      opts.setChromeBinaryPath(braveBin);
+      return new Builder().forBrowser("chrome").setChromeOptions(opts).build();
+    },
+    "brave",
     headless
   );
 }

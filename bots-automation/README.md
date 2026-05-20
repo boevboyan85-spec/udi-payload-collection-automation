@@ -15,8 +15,8 @@ All defaults match prior behaviour if `.env` is missing empty keys—variables a
 - Node.js 18+
 - **Browsers:** `npm run install:browsers` (platform-aware; see below)
 - **macOS:** Safari stacks need `sudo safaridriver --enable` once
-- **Ubuntu / Kasm:** Chrome, Chromium, Firefox, and optionally Edge via apt; Playwright bundles Chromium/Firefox
-- **Windows:** Chrome, Edge, Firefox — all four tools, headless + headed (no Chromium / WebKit / Safari rows)
+- **Ubuntu / Kasm:** Chrome, Chromium, Firefox, Brave, and optionally Edge via apt; Playwright bundles Chromium/Firefox
+- **Windows:** Chrome, Edge, Firefox, Brave — all four tools, headless + headed (no Chromium / WebKit / Safari rows)
 
 ## Platform (macOS vs Ubuntu / Kasm vs Windows)
 
@@ -29,7 +29,7 @@ Set in **`.env`** or the environment:
 | `BOTS_NO_SANDBOX` | `1` / `0` | Force or disable Chromium sandbox flags |
 | `BOTS_SKIP_OS_BROWSER_INSTALL` | `1` | Skip apt browser install during `install:browsers` |
 
-**Auto detection:** `darwin` → macOS (Chrome, Chromium, Firefox, WebKit, Safari, Edge). Linux with Ubuntu/Kasm in `/etc/os-release` → Ubuntu profile (Chrome, Chromium, Firefox, Edge). `win32` → Windows profile (Chrome, Edge, Firefox only).
+**Auto detection:** `darwin` → macOS (Chrome, Chromium, Firefox, WebKit, Safari, Edge). Linux with Ubuntu/Kasm in `/etc/os-release` → Ubuntu profile (Chrome, Chromium, Firefox, Edge, Brave). `win32` → Windows profile (Chrome, Edge, Firefox, Brave).
 
 **Kasm example (`.env`):**
 
@@ -67,7 +67,7 @@ npm install
 npm run install:browsers
 ```
 
-On **Ubuntu/Kasm**, `install:browsers` runs `scripts/install-os-browsers-ubuntu.sh` (apt) and `playwright install chromium firefox` plus Linux deps. On **macOS**, Playwright **chromium, firefox, webkit**. On **Windows**, `install-os-browsers-windows.ps1` (winget: Chrome, Edge, Firefox) plus Playwright **chromium, firefox** — **Playwright + Firefox** uses the Playwright bundle under `%LOCALAPPDATA%\ms-playwright`, not retail `firefox.exe`; Puppeteer / Selenium / TestCafe use `FIREFOX_BIN`.
+On **Ubuntu/Kasm**, `install:browsers` runs `scripts/install-os-browsers-ubuntu.sh` (apt: Chrome, Chromium, Firefox, Brave, Edge) and `playwright install chromium firefox` plus Linux deps. On **macOS**, Playwright **chromium, firefox, webkit** (no Brave in matrix). On **Windows**, `install-os-browsers-windows.ps1` (winget: Chrome, Edge, Firefox, Brave) plus Playwright **chromium, firefox** — **Playwright + Firefox** uses the Playwright bundle under `%LOCALAPPDATA%\ms-playwright`, not retail `firefox.exe`; Puppeteer / Selenium / TestCafe use `FIREFOX_BIN`. **Brave** is Chromium-based (all four tools use `BRAVE_BIN` / system path).
 
 **Kasm one-shot setup** (clone monorepo, apt browsers, npm, git credentials for test env):
 
@@ -165,7 +165,8 @@ All scripts are defined in **`package.json`**. Run them from the **`bots-automat
 | `CHROMIUM_BIN`, `SELENIUM_CHROMIUM_BINARY` | System Chromium for Puppeteer/TestCafe/Selenium `chromium` rows. |
 | `FIREFOX_BIN`, `SELENIUM_FIREFOX_BINARY` | Retail Firefox for Puppeteer / Selenium / TestCafe (not Playwright). |
 | `PLAYWRIGHT_FIREFOX_EXECUTABLE_PATH` | Optional override for Playwright’s bundled Firefox only. |
-| `EDGE_BIN`, `SELENIUM_EDGE_BINARY` | Microsoft Edge (Ubuntu/Linux). |
+| `EDGE_BIN`, `SELENIUM_EDGE_BINARY` | Microsoft Edge (Ubuntu/Linux/Windows). |
+| `BRAVE_BIN`, `SELENIUM_BRAVE_BINARY` | Brave Browser (Ubuntu/Kasm/Windows; Chromium-based). |
 | `BOTS_SKIP_SELENIUM_SAFARI` | `true` / `1` to skip Safari on macOS. |
 | `SELENIUM_SAFARI_SERVER` | Attach to a running `safaridriver` URL. |
 | **Risk API & reports** | |

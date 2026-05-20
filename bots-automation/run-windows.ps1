@@ -1,4 +1,4 @@
-# Run full Windows collection matrix: 4 tools × Chrome, Edge, Firefox × headless/headed (when BOTS_COLLECT_DUAL=true).
+# Run full Windows collection matrix: 4 tools × Chrome, Edge, Firefox, Brave × headless/headed (when BOTS_COLLECT_DUAL=true).
 # Usage (PowerShell): .\run-windows.ps1
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
