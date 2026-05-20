@@ -3,8 +3,8 @@ import { chromium, firefox, webkit } from "playwright";
 import {
   resolveChromeBinaryPath,
   resolveEdgeBinaryPath,
-  resolveFirefoxBinaryPath,
 } from "./browserBinaries.js";
+import { resolvePlaywrightFirefoxBinaryPath } from "./firefoxBinary.js";
 import { chromiumNoSandboxArgs } from "./browserLaunchArgs.js";
 import {
   TARGET_URL,
@@ -85,17 +85,12 @@ export function runPlaywrightChrome() {
 }
 
 export function runPlaywrightFirefox() {
+  // Playwright needs its bundled Firefox (juggler), not retail Mozilla Firefox.
+  // System firefox.exe is used by Puppeteer / Selenium / TestCafe via FIREFOX_BIN.
   const launchOptions = {};
-  if (process.platform === "win32") {
-    const firefoxBin = resolveFirefoxBinaryPath();
-    if (!firefoxBin) {
-      return Promise.reject(
-        new Error(
-          "Firefox binary not found. Install Firefox or set FIREFOX_BIN (see install:browsers on Windows)."
-        )
-      );
-    }
-    launchOptions.executablePath = firefoxBin;
+  const pwFirefox = resolvePlaywrightFirefoxBinaryPath();
+  if (pwFirefox) {
+    launchOptions.executablePath = pwFirefox;
   }
   return runPlaywright(firefox, "firefox", launchOptions);
 }

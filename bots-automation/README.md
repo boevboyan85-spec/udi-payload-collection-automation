@@ -67,7 +67,7 @@ npm install
 npm run install:browsers
 ```
 
-On **Ubuntu/Kasm**, `install:browsers` runs `scripts/install-os-browsers-ubuntu.sh` (apt) and `playwright install chromium firefox` plus Linux deps. On **macOS**, Playwright **chromium, firefox, webkit**. On **Windows**, `install-os-browsers-windows.ps1` (winget: Chrome, Edge, Firefox) plus Playwright **chromium, firefox** (used for Firefox automation; Chrome/Edge use system binaries or Playwright channels).
+On **Ubuntu/Kasm**, `install:browsers` runs `scripts/install-os-browsers-ubuntu.sh` (apt) and `playwright install chromium firefox` plus Linux deps. On **macOS**, Playwright **chromium, firefox, webkit**. On **Windows**, `install-os-browsers-windows.ps1` (winget: Chrome, Edge, Firefox) plus Playwright **chromium, firefox** — **Playwright + Firefox** uses the Playwright bundle under `%LOCALAPPDATA%\ms-playwright`, not retail `firefox.exe`; Puppeteer / Selenium / TestCafe use `FIREFOX_BIN`.
 
 **Kasm one-shot setup** (clone monorepo, apt browsers, npm, git credentials for test env):
 
@@ -163,7 +163,8 @@ All scripts are defined in **`package.json`**. Run them from the **`bots-automat
 | `BOTS_PLATFORM`, `BOTS_IN_CONTAINER`, `BOTS_NO_SANDBOX`, `BOTS_SKIP_OS_BROWSER_INSTALL` | Platform and Kasm/Docker behaviour (see above). |
 | `SELENIUM_CHROME_BINARY`, `CHROME_BIN`, `GOOGLE_CHROME_BIN` | Chrome binary for Selenium / Puppeteer. |
 | `CHROMIUM_BIN`, `SELENIUM_CHROMIUM_BINARY` | System Chromium for Puppeteer/TestCafe/Selenium `chromium` rows. |
-| `FIREFOX_BIN`, `SELENIUM_FIREFOX_BINARY` | Firefox binary. |
+| `FIREFOX_BIN`, `SELENIUM_FIREFOX_BINARY` | Retail Firefox for Puppeteer / Selenium / TestCafe (not Playwright). |
+| `PLAYWRIGHT_FIREFOX_EXECUTABLE_PATH` | Optional override for Playwright’s bundled Firefox only. |
 | `EDGE_BIN`, `SELENIUM_EDGE_BINARY` | Microsoft Edge (Ubuntu/Linux). |
 | `BOTS_SKIP_SELENIUM_SAFARI` | `true` / `1` to skip Safari on macOS. |
 | `SELENIUM_SAFARI_SERVER` | Attach to a running `safaridriver` URL. |

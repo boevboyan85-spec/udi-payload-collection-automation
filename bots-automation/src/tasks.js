@@ -138,7 +138,7 @@ export function buildTaskList() {
     addBrowserTasks(tasks, dual, "Selenium", "Firefox", runSeleniumFirefox);
   } else {
     console.warn(
-      "[skip] TestCafe/Selenium + Firefox: install Firefox or set FIREFOX_BIN (Puppeteer/Playwright still run)."
+      "[skip] TestCafe/Selenium + Firefox: install Firefox or set FIREFOX_BIN (Puppeteer still runs; Playwright uses bundled Firefox from install:browsers)."
     );
   }
 
