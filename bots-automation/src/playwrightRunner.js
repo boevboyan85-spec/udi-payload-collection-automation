@@ -13,6 +13,12 @@ import {
   PAYLOAD_TIMEOUT_MS,
   resolveHeadless,
 } from "./config.js";
+import {
+  resolveStealth,
+  stealthChromiumArgs,
+  stealthFirefoxPrefs,
+  STEALTH_INIT_SCRIPT,
+} from "./stealth.js";
 import { getDocumentFocusCsvColumnsFromEncodedUdi } from "./udiDecompress.js";
 import { waitForNonEmptyValue } from "./waitForPayload.js";
 
@@ -25,6 +31,7 @@ const SELECTOR = `#${PAYLOAD_ELEMENT_ID}`;
  */
 async function runPlaywright(browserType, browserLabel, launchOverrides = {}) {
   const headless = resolveHeadless("PLAYWRIGHT_HEADLESS");
+  const stealth = resolveStealth("PLAYWRIGHT_STEALTH");
   const browser = await browserType.launch({
     headless,
     ...launchOverrides,
@@ -33,6 +40,9 @@ async function runPlaywright(browserType, browserLabel, launchOverrides = {}) {
     const context = await browser.newContext({
       viewport: { width: 1280, height: 900 },
     });
+    if (stealth) {
+      await context.addInitScript({ content: STEALTH_INIT_SCRIPT });
+    }
     const page = await context.newPage();
     await page.goto(TARGET_URL, { waitUntil: "networkidle", timeout: 120_000 });
 
@@ -51,6 +61,7 @@ async function runPlaywright(browserType, browserLabel, launchOverrides = {}) {
       type: "playwright",
       browser: browserLabel,
       headless,
+      stealth,
       payload,
       documentHasFocus,
       documentVisibility,
@@ -61,7 +72,10 @@ async function runPlaywright(browserType, browserLabel, launchOverrides = {}) {
 }
 
 function chromiumLaunchOptions() {
-  const extraArgs = chromiumNoSandboxArgs();
+  const extraArgs = [
+    ...chromiumNoSandboxArgs(),
+    ...(resolveStealth("PLAYWRIGHT_STEALTH") ? stealthChromiumArgs() : []),
+  ];
   return extraArgs.length ? { args: extraArgs } : {};
 }
 
@@ -92,6 +106,9 @@ export function runPlaywrightFirefox() {
   const pwFirefox = resolvePlaywrightFirefoxBinaryPath();
   if (pwFirefox) {
     launchOptions.executablePath = pwFirefox;
+  }
+  if (resolveStealth("PLAYWRIGHT_STEALTH")) {
+    launchOptions.firefoxUserPrefs = stealthFirefoxPrefs();
   }
   return runPlaywright(firefox, "firefox", launchOptions);
 }

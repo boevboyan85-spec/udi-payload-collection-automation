@@ -15,6 +15,12 @@ import {
   resolveHeadless,
 } from "./config.js";
 import { numberEnv } from "./env.js";
+import {
+  resolveStealth,
+  stealthChromiumArgs,
+  stealthFirefoxPrefs,
+  STEALTH_INIT_SCRIPT,
+} from "./stealth.js";
 import { getDocumentFocusCsvColumnsFromEncodedUdi } from "./udiDecompress.js";
 import { waitForNonEmptyValue } from "./waitForPayload.js";
 
@@ -66,9 +72,10 @@ async function closeBrowser(browser) {
 /**
  * @param {"chrome"|"firefox"} browserKind
  * @param {boolean} headless
+ * @param {boolean} stealth
  * @returns {import("puppeteer").LaunchOptions}
  */
-function buildLaunchOptions(browserKind, headless) {
+function buildLaunchOptions(browserKind, headless, stealth) {
   /** @type {import("puppeteer").LaunchOptions} */
   const launchOptions = {
     browser: browserKind,
@@ -88,14 +95,23 @@ function buildLaunchOptions(browserKind, headless) {
     if (firefoxBin) {
       launchOptions.executablePath = String(firefoxBin).trim();
     }
+    const firefoxPrefs = {};
     if (isChromiumNoSandbox()) {
-      launchOptions.extraPrefsFirefox = {
-        "security.sandbox.content.level": 0,
-      };
+      firefoxPrefs["security.sandbox.content.level"] = 0;
       process.env.MOZ_DISABLE_CONTENT_SANDBOX = "1";
     }
+    if (stealth) {
+      Object.assign(firefoxPrefs, stealthFirefoxPrefs());
+    }
+    if (Object.keys(firefoxPrefs).length) {
+      launchOptions.extraPrefsFirefox = firefoxPrefs;
+    }
   } else {
-    launchOptions.args = ["--window-size=1280,900", ...chromiumNoSandboxArgs()];
+    launchOptions.args = [
+      "--window-size=1280,900",
+      ...chromiumNoSandboxArgs(),
+      ...(stealth ? stealthChromiumArgs() : []),
+    ];
     const chromeBin =
       process.env.PUPPETEER_EXECUTABLE_PATH ||
       process.env.CHROME_BIN ||
@@ -113,7 +129,8 @@ function buildLaunchOptions(browserKind, headless) {
  */
 async function runPuppeteer(browserKind, browserLabel, executablePath = "") {
   const headless = resolveHeadless("PUPPETEER_HEADLESS");
-  const launchOptions = buildLaunchOptions(browserKind, headless);
+  const stealth = resolveStealth("PUPPETEER_STEALTH");
+  const launchOptions = buildLaunchOptions(browserKind, headless, stealth);
   if (executablePath && browserKind === "chrome") {
     launchOptions.executablePath = executablePath;
   }
@@ -122,6 +139,9 @@ async function runPuppeteer(browserKind, browserLabel, executablePath = "") {
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 900 });
+    if (stealth) {
+      await page.evaluateOnNewDocument(STEALTH_INIT_SCRIPT);
+    }
     await gotoCollector(page, browserKind);
 
     const payload = await waitForNonEmptyValue(async () => {
@@ -141,6 +161,7 @@ async function runPuppeteer(browserKind, browserLabel, executablePath = "") {
       type: "puppeteer",
       browser: browserLabel,
       headless,
+      stealth,
       payload,
       documentHasFocus,
       documentVisibility,

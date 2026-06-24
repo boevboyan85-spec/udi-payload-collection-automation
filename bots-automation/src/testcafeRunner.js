@@ -8,6 +8,7 @@ import {
   TARGET_URL,
   resolveHeadless,
 } from "./config.js";
+import { resolveStealth, STEALTH_INIT_SCRIPT } from "./stealth.js";
 import { formatTestcafeBrowserString } from "./testcafeBrowser.js";
 import { getTestcafeRunTimeouts } from "./testcafeTimeouts.js";
 import { getDocumentFocusCsvColumnsFromEncodedUdi } from "./udiDecompress.js";
@@ -26,7 +27,8 @@ async function runTestcafe(browserArg) {
     `bots-tc-payload-${Date.now()}-${browserArg}.txt`
   );
   const headless = resolveHeadless("TESTCAFE_HEADLESS");
-  const tcBrowser = formatTestcafeBrowserString(browserArg, headless);
+  const stealth = resolveStealth("TESTCAFE_STEALTH");
+  const tcBrowser = formatTestcafeBrowserString(browserArg, headless, stealth);
   const timeouts = getTestcafeRunTimeouts(browserArg, headless);
 
   const prev = {
@@ -44,11 +46,13 @@ async function runTestcafe(browserArg) {
   let testcafe;
   try {
     testcafe = await createTestCafe();
-    const failedCount = await testcafe
-      .createRunner()
-      .src(testFile)
-      .browsers(tcBrowser)
-      .run({
+    const runner = testcafe.createRunner().src(testFile).browsers(tcBrowser);
+    if (stealth) {
+      // TestCafe drives the page through a proxy (no WebDriver), so inject the override
+      // before page scripts run rather than via launch flags.
+      runner.clientScripts({ content: STEALTH_INIT_SCRIPT });
+    }
+    const failedCount = await runner.run({
         skipJsErrors: true,
         pageLoadTimeout: timeouts.pageLoadTimeout,
         selectorTimeout: timeouts.selectorTimeout,
@@ -83,6 +87,7 @@ async function runTestcafe(browserArg) {
       type: "testcafe",
       browser: browserArg,
       headless,
+      stealth,
       payload,
       documentHasFocus,
       documentVisibility,

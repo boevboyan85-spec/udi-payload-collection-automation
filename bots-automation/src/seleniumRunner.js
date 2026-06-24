@@ -18,6 +18,11 @@ import {
   PAYLOAD_TIMEOUT_MS,
   resolveHeadless,
 } from "./config.js";
+import {
+  resolveStealth,
+  stealthChromiumArgs,
+  stealthFirefoxPrefs,
+} from "./stealth.js";
 import { getDocumentFocusCsvColumnsFromEncodedUdi } from "./udiDecompress.js";
 
 async function waitForPayloadValue(driver, timeoutMs) {
@@ -40,7 +45,7 @@ async function waitForPayloadValue(driver, timeoutMs) {
   );
 }
 
-async function runWithDriver(buildDriver, browserLabel, headless) {
+async function runWithDriver(buildDriver, browserLabel, headless, stealth = false) {
   const driver = await buildDriver();
   try {
     await driver.manage().setTimeouts({ pageLoad: 120_000, implicit: 0 });
@@ -53,6 +58,7 @@ async function runWithDriver(buildDriver, browserLabel, headless) {
       type: "selenium",
       browser: browserLabel,
       headless,
+      stealth,
       payload,
       documentHasFocus,
       documentVisibility,
@@ -62,10 +68,22 @@ async function runWithDriver(buildDriver, browserLabel, headless) {
   }
 }
 
-function buildChromiumOptions(headless) {
+/**
+ * Chromium-family options. In stealth mode, drop the WebDriver flag via the Blink switch
+ * and stop Selenium advertising automation (`enable-automation`).
+ * @param {boolean} headless
+ * @param {boolean} [stealth]
+ */
+function buildChromiumOptions(headless, stealth = false) {
   const opts = new chrome.Options().addArguments("--window-size=1280,900");
   for (const arg of chromiumNoSandboxArgs()) {
     opts.addArguments(arg);
+  }
+  if (stealth) {
+    for (const arg of stealthChromiumArgs()) {
+      opts.addArguments(arg);
+    }
+    opts.excludeSwitches("enable-automation");
   }
   if (headless) {
     opts.addArguments("--headless=new");
@@ -75,20 +93,23 @@ function buildChromiumOptions(headless) {
 
 export function runSeleniumChrome() {
   const headless = resolveHeadless("SELENIUM_HEADLESS");
+  const stealth = resolveStealth("SELENIUM_STEALTH");
   return runWithDriver(
     () => {
-      const opts = buildChromiumOptions(headless);
+      const opts = buildChromiumOptions(headless, stealth);
       const chromeBin = resolveChromeBinaryPath();
       if (chromeBin) opts.setChromeBinaryPath(chromeBin);
       return new Builder().forBrowser("chrome").setChromeOptions(opts).build();
     },
     "chrome",
-    headless
+    headless,
+    stealth
   );
 }
 
 export function runSeleniumChromium() {
   const headless = resolveHeadless("SELENIUM_HEADLESS");
+  const stealth = resolveStealth("SELENIUM_STEALTH");
   const chromiumBin = resolveChromiumBinaryPath();
   if (!chromiumBin) {
     return Promise.reject(
@@ -97,32 +118,41 @@ export function runSeleniumChromium() {
   }
   return runWithDriver(
     () => {
-      const opts = buildChromiumOptions(headless);
+      const opts = buildChromiumOptions(headless, stealth);
       opts.setChromeBinaryPath(chromiumBin);
       return new Builder().forBrowser("chrome").setChromeOptions(opts).build();
     },
     "chromium",
-    headless
+    headless,
+    stealth
   );
 }
 
 export function runSeleniumFirefox() {
   const headless = resolveHeadless("SELENIUM_HEADLESS");
+  const stealth = resolveStealth("SELENIUM_STEALTH");
   return runWithDriver(
     () => {
       const opts = new firefox.Options().windowSize({ width: 1280, height: 900 });
       if (headless) opts.addArguments("-headless");
+      if (stealth) {
+        for (const [key, value] of Object.entries(stealthFirefoxPrefs())) {
+          opts.setPreference(key, value);
+        }
+      }
       const firefoxBin = resolveFirefoxBinaryPath();
       if (firefoxBin) opts.setBinary(firefoxBin);
       return new Builder().forBrowser("firefox").setFirefoxOptions(opts).build();
     },
     "firefox",
-    headless
+    headless,
+    stealth
   );
 }
 
 export function runSeleniumEdge() {
   const headless = resolveHeadless("SELENIUM_HEADLESS");
+  const stealth = resolveStealth("SELENIUM_STEALTH");
   const edgeBin = resolveEdgeBinaryPath();
   if (!edgeBin) {
     return Promise.reject(new Error("Microsoft Edge binary not found (set EDGE_BIN)."));
@@ -133,29 +163,38 @@ export function runSeleniumEdge() {
       for (const arg of chromiumNoSandboxArgs()) {
         opts.addArguments(arg);
       }
+      if (stealth) {
+        for (const arg of stealthChromiumArgs()) {
+          opts.addArguments(arg);
+        }
+        opts.excludeSwitches("enable-automation");
+      }
       if (headless) opts.addArguments("--headless=new");
       opts.setBinaryPath(edgeBin);
       return new Builder().forBrowser("MicrosoftEdge").setEdgeOptions(opts).build();
     },
     "edge",
-    headless
+    headless,
+    stealth
   );
 }
 
 export function runSeleniumBrave() {
   const headless = resolveHeadless("SELENIUM_HEADLESS");
+  const stealth = resolveStealth("SELENIUM_STEALTH");
   const braveBin = resolveBraveBinaryPath();
   if (!braveBin) {
     return Promise.reject(new Error("Brave binary not found (set BRAVE_BIN)."));
   }
   return runWithDriver(
     () => {
-      const opts = buildChromiumOptions(headless);
+      const opts = buildChromiumOptions(headless, stealth);
       opts.setChromeBinaryPath(braveBin);
       return new Builder().forBrowser("chrome").setChromeOptions(opts).build();
     },
     "brave",
-    headless
+    headless,
+    stealth
   );
 }
 

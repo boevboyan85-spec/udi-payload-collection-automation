@@ -160,6 +160,8 @@ All scripts are defined in **`package.json`**. Run them from the **`bots-automat
 | `BOTS_COLLECT_DUAL` | Default dual mode: headless then headed per stack (`!== "false"`). |
 | `BOTS_HEADLESS` | When dual mode is off, global headless default (`!== "false"` → headless). |
 | `PUPPETEER_HEADLESS`, `PLAYWRIGHT_HEADLESS`, `SELENIUM_HEADLESS`, `TESTCAFE_HEADLESS` | Per-tool overrides (`true` / `false`). |
+| `BOTS_STEALTH` | Stealth mode: force `navigator.webdriver` (collector `webDriverEnabled`) to **false**, mimicking a fraudster hiding automation. Off by default; `true` / `1` to enable. |
+| `PUPPETEER_STEALTH`, `PLAYWRIGHT_STEALTH`, `SELENIUM_STEALTH`, `TESTCAFE_STEALTH` | Per-tool stealth overrides (`true`/`1` or `false`/`0`); take precedence over `BOTS_STEALTH`. |
 | `BOTS_PLATFORM`, `BOTS_IN_CONTAINER`, `BOTS_NO_SANDBOX`, `BOTS_SKIP_OS_BROWSER_INSTALL` | Platform and Kasm/Docker behaviour (see above). |
 | `SELENIUM_CHROME_BINARY`, `CHROME_BIN`, `GOOGLE_CHROME_BIN` | Chrome binary for Selenium / Puppeteer. |
 | `CHROMIUM_BIN`, `SELENIUM_CHROMIUM_BINARY` | System Chromium for Puppeteer/TestCafe/Selenium `chromium` rows. |
@@ -182,11 +184,34 @@ All scripts are defined in **`package.json`**. Run them from the **`bots-automat
 
 Implementation lives in **`src/env.js`** (dotenv load + typed getters). **`src/config.js`** re-exports env constants and adds headless helpers used by runners.
 
+## Stealth mode
+
+`BOTS_STEALTH=true` (or a per-tool `*_STEALTH`) makes each automation stack report `navigator.webdriver === false` — the collector then records `webDriverEnabled: false` — emulating a real fraudster who hides the automation tell. It is **off by default** and orthogonal to headless/dual mode, so run a deliberate stealth pass when you want to compare against normal runs (the CSV `stealth` column tells the rows apart).
+
+Per engine (all in **`src/stealth.js`**):
+
+- **Chromium** (Chrome/Chromium/Edge/Brave): launch flag `--disable-blink-features=AutomationControlled` (+ Selenium `excludeSwitches: enable-automation`), plus an init-script getter override.
+- **Firefox**: pref `dom.webdriver.enabled=false` (Puppeteer `extraPrefsFirefox`, Playwright `firefoxUserPrefs`, Selenium `setPreference`), plus the init script.
+- **TestCafe**: no WebDriver — the override is injected via `clientScripts` before page scripts run (plus the Chromium flag for Chrome-family).
+- **WebKit (Playwright)**: init-script override only.
+- **Safari (native, Selenium)**: not supported — `safaridriver` exposes no hook to suppress `navigator.webdriver`.
+
+Scope is limited to `navigator.webdriver` (DEVP-2649); other headless/automation tells are unchanged.
+
+Examples:
+
+```bash
+BOTS_STEALTH=true npm run collect            # whole matrix in stealth
+PUPPETEER_STEALTH=true npm run collect       # only Puppeteer stacks stealthed
+BOTS_STEALTH=true PLAYWRIGHT_STEALTH=false npm run collect   # all but Playwright
+```
+
 ## CSV schema
 
-Columns: **`bot`**, **`browser`**, **`headless`**, **`payload`**, **`documentHasFocus`**, **`documentVisibility`**.  
+Columns: **`type`**, **`browser`**, **`headless`**, **`stealth`**, **`payload`**, **`documentHasFocus`**, **`documentVisibility`**.  
 `payload` is the full textarea JSON (e.g. `{ "headers": { … }, "payload": "<UDI base64>" }`).  
-`documentHasFocus` / `documentVisibility` are derived from the **decompressed** JSC where applicable.
+`documentHasFocus` / `documentVisibility` are derived from the **decompressed** JSC where applicable.  
+`stealth` is `true`/`false` per run; legacy CSVs are auto-migrated (old rows get an empty `stealth` cell) on the next append.
 
 ## Output
 

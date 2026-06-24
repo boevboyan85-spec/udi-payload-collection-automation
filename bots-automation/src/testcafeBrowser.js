@@ -5,6 +5,7 @@ import {
   resolveEdgeBinaryPath,
 } from "./browserBinaries.js";
 import { chromiumNoSandboxArgs } from "./browserLaunchArgs.js";
+import { stealthChromiumArgs } from "./stealth.js";
 
 /**
  * Chromium/Edge on Linux: pass explicit binary path + container flags.
@@ -13,14 +14,15 @@ import { chromiumNoSandboxArgs } from "./browserLaunchArgs.js";
  * @param {string} alias
  * @param {string} binaryPath
  * @param {boolean} headless
+ * @param {boolean} stealth
  * @returns {string}
  */
-function formatChromiumAliasWithPath(alias, binaryPath, headless) {
+function formatChromiumAliasWithPath(alias, binaryPath, headless, stealth) {
   const segments = [`${alias}:${binaryPath}`];
   if (headless) segments.push("headless");
-  const sandbox = chromiumNoSandboxArgs();
-  if (sandbox.length) {
-    return `${segments.join(":")} ${sandbox.join(" ")}`;
+  const flags = [...chromiumNoSandboxArgs(), ...(stealth ? stealthChromiumArgs() : [])];
+  if (flags.length) {
+    return `${segments.join(":")} ${flags.join(" ")}`;
   }
   return segments.join(":");
 }
@@ -28,13 +30,14 @@ function formatChromiumAliasWithPath(alias, binaryPath, headless) {
 /**
  * @param {string} browserArg
  * @param {boolean} headless
+ * @param {boolean} [stealth]
  * @returns {string}
  */
-export function formatTestcafeBrowserString(browserArg, headless) {
+export function formatTestcafeBrowserString(browserArg, headless, stealth = false) {
   if (browserArg === "chrome" && process.platform === "win32") {
     const chromeBin = resolveChromeBinaryPath();
     if (chromeBin) {
-      return formatChromiumAliasWithPath("chrome", chromeBin, headless);
+      return formatChromiumAliasWithPath("chrome", chromeBin, headless, stealth);
     }
   }
   if (browserArg === "edge") {
@@ -42,7 +45,7 @@ export function formatTestcafeBrowserString(browserArg, headless) {
     if (!edgeBin) {
       throw new Error("Microsoft Edge binary not found (set EDGE_BIN).");
     }
-    return formatChromiumAliasWithPath("edge", edgeBin, headless);
+    return formatChromiumAliasWithPath("edge", edgeBin, headless, stealth);
   }
   if (browserArg === "chromium") {
     const chromiumBin = resolveChromiumBinaryPath();
@@ -51,14 +54,22 @@ export function formatTestcafeBrowserString(browserArg, headless) {
         "Chromium binary not found. Run: npm run install:browsers (Playwright Chromium) or set CHROMIUM_BIN."
       );
     }
-    return formatChromiumAliasWithPath("chromium", chromiumBin, headless);
+    return formatChromiumAliasWithPath("chromium", chromiumBin, headless, stealth);
   }
   if (browserArg === "brave") {
     const braveBin = resolveBraveBinaryPath();
     if (!braveBin) {
       throw new Error("Brave binary not found (set BRAVE_BIN).");
     }
-    return formatChromiumAliasWithPath("chrome", braveBin, headless);
+    return formatChromiumAliasWithPath("chrome", braveBin, headless, stealth);
   }
-  return headless ? `${browserArg}:headless` : browserArg;
+  // Chrome/Chromium-family alias without an explicit path (e.g. macOS/Linux `chrome`):
+  // append the stealth flag after the alias so Blink does not expose navigator.webdriver.
+  const chromiumFamily =
+    browserArg === "chrome" || browserArg === "chromium" || browserArg === "brave";
+  const base = headless ? `${browserArg}:headless` : browserArg;
+  if (stealth && chromiumFamily) {
+    return `${base} ${stealthChromiumArgs().join(" ")}`;
+  }
+  return base;
 }

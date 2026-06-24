@@ -28,6 +28,14 @@ async function main() {
       ? "dual (each stack: headless + headed; Safari: headed once)"
       : "single (BOTS_HEADLESS / per-tool env)"
   );
+  const stealthOn =
+    process.env.BOTS_STEALTH === "true" || process.env.BOTS_STEALTH === "1";
+  console.log(
+    "Stealth mode:",
+    stealthOn
+      ? "on (navigator.webdriver forced false; per-tool *_STEALTH can override)"
+      : "off (set BOTS_STEALTH=true, or per-tool *_STEALTH)"
+  );
   console.log("---");
 
   for (const { name, run } of tasks) {
@@ -36,7 +44,7 @@ async function main() {
       const row = await run();
       appendPayloadRow(csvAbsolute, row);
       console.log(
-        `  OK — headless=${row.headless}, document.hasFocus=${row.documentHasFocus}, visibility=${row.documentVisibility}, payload (${row.payload.length} chars)`
+        `  OK — headless=${row.headless}, stealth=${row.stealth}, document.hasFocus=${row.documentHasFocus}, visibility=${row.documentVisibility}, payload (${row.payload.length} chars)`
       );
     } catch (err) {
       console.error(`  FAILED (${name}):`, err.message || err);

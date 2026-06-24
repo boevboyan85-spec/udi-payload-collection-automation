@@ -9,6 +9,7 @@ const HEADERS = [
   "type",
   "browser",
   "headless",
+  "stealth",
   "payload",
   "documentHasFocus",
   "documentVisibility",
@@ -16,7 +17,7 @@ const HEADERS = [
 
 const HEADER_LINE = HEADERS.join(",");
 
-function formatHeadlessForCsv(value) {
+function formatBooleanForCsv(value) {
   if (value === true) return "true";
   if (value === false) return "false";
   if (value === "true" || value === "false") return value;
@@ -36,7 +37,8 @@ function rowToLine(row) {
   return [
     escapeCsvField(row.type),
     escapeCsvField(row.browser),
-    escapeCsvField(formatHeadlessForCsv(row.headless)),
+    escapeCsvField(formatBooleanForCsv(row.headless)),
+    escapeCsvField(formatBooleanForCsv(row.stealth)),
     escapeCsvField(row.payload),
     escapeCsvField(formatDocumentHasFocusForCsv(row.documentHasFocus)),
     escapeCsvField(row.documentVisibility ?? ""),
@@ -73,6 +75,7 @@ function migratePayloadsCsvIfNeeded(filePath) {
         type: row.type ?? row.bot,
         browser: row.browser,
         headless: row.headless,
+        stealth: row.stealth,
         payload: row.payload,
         documentHasFocus: row.documentHasFocus,
         documentVisibility: row.documentVisibility,
@@ -87,7 +90,7 @@ export { isFirefoxAvailable as firefoxExecutableOnPath } from "./browserBinaries
 /**
  * Appends one row; writes UTF-8 header row if the file does not exist yet.
  * @param {string} filePath - absolute or cwd-relative path
- * @param {{ type: string, browser: string, headless: boolean|string, payload: string, documentHasFocus?: boolean|string, documentVisibility?: string }} row
+ * @param {{ type: string, browser: string, headless: boolean|string, stealth?: boolean|string, payload: string, documentHasFocus?: boolean|string, documentVisibility?: string }} row
  */
 export function appendPayloadRow(filePath, row) {
   const dir = path.dirname(filePath);
@@ -113,7 +116,8 @@ export function appendPayloadRow(filePath, row) {
     [
       escapeCsvField(row.type),
       escapeCsvField(row.browser),
-      escapeCsvField(formatHeadlessForCsv(row.headless)),
+      escapeCsvField(formatBooleanForCsv(row.headless)),
+      escapeCsvField(formatBooleanForCsv(row.stealth)),
       escapeCsvField(row.payload),
       escapeCsvField(formatDocumentHasFocusForCsv(docFocus)),
       escapeCsvField(docVis),
